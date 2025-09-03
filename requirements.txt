@@ -1,0 +1,6 @@
+Flask==3.1.2
+flask_mqtt==1.2.1
+PyYAML==6.0.2
+temod==2.2.2
+temod_flask==2.2.3
+toml==0.10.2
