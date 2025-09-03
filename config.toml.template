@@ -1,0 +1,30 @@
+[app]
+prod = true
+host = "0.0.0.0"
+port = 23909
+threaded = true
+debug = true
+ssl = false
+ssl_key = "resources/key.pem"
+ssl_cert = "resources/cert.pem"
+ssl_encapsulated = false
+templates_folder = "front/templates"
+static_folder = "front/static"
+secret_key = ""
+
+[mqtt]
+broker_url = "localhost"
+broker_port = 1883
+username = ""
+password = ""
+keepalive = 0
+tls_enabled = false
+
+[temod]
+bound_database = "mysql"
+core_directory = "core"
+
+[storage.credentials]
+host = "127.0.0.1"
+port = 3306
+database = "mqtt"
