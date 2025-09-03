@@ -20,13 +20,12 @@ create table mqtt_relay(
 \******************************/
 CREATE TABLE IF NOT EXISTS mqtt_messages (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    client VARCHAR(255) NOT NULL,
     topic VARCHAR(255) NOT NULL,
-    payload_json JSON NULL,
-    payload_text TEXT NULL,
+    payload TEXT NULL,
     qos TINYINT UNSIGNED NOT NULL DEFAULT 0,
-    retain TINYINT(1) NOT NULL DEFAULT 0,
-    received_at DATETIME NOT NULL,
+    at DATETIME NOT NULL,
     PRIMARY KEY (id),
-    INDEX idx_topic_received (topic, received_at),
-    INDEX idx_received (received_at)
+    INDEX idx_topic_received (topic, at),
+    INDEX idx_received (at)
 );

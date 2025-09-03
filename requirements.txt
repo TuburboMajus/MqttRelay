@@ -4,3 +4,4 @@ PyYAML==6.0.2
 temod==2.2.2
 temod_flask==2.2.3
 toml==0.10.2
+gunicorn==23.0.0
