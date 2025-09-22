@@ -12,6 +12,7 @@ if not os.getcwd() in sys.path:
 	sys.path.append(os.getcwd())
 
 from install import common_funcs
+from datetime import datetime
 from getpass import getpass
 from core.entity import *
 
@@ -76,20 +77,20 @@ def get_admin_user():
 def get_mqtt_broker():
 	print("\n\nMqtt broker setup")
 	"""Ask the user for MQTT configuration values via terminal input."""
-    config = {}
+	config = {}
 
-    config["broker_url"] = input("\n\nEnter broker URL [localhost]: ") or "localhost"
-    config["broker_port"] = int(input("Enter broker port [1883]: ") or 1883)
-    config["username"] = input("Enter username (leave empty for none): ")
-    config["password"] = input("Enter password (leave empty for none): ")
-    config["keepalive"] = int(input("Enter keepalive [0]: ") or 0)
+	config["broker_url"] = input("\n\nEnter broker URL [localhost]: ") or "localhost"
+	config["broker_port"] = int(input("Enter broker port [1883]: ") or 1883)
+	config["username"] = input("Enter username (leave empty for none): ")
+	config["password"] = input("Enter password (leave empty for none): ")
+	config["keepalive"] = int(input("Enter keepalive [0]: ") or 0)
 
-    tls_input = input("Enable TLS? (yes/*) [no]: ").strip().lower()
-    config["tls_enabled"] = tls_input in ("yes", "y", "true", "1")
+	tls_input = input("Enable TLS? (yes/*) [no]: ").strip().lower()
+	config["tls_enabled"] = tls_input in ("yes", "y", "true", "1")
 
-    print("You can later change the settings from config.toml")
+	print("You can later change the settings from config.toml")
 
-    return config
+	return config
 
 
 def get_crypto_config():
@@ -119,9 +120,8 @@ def get_crypto_config():
 				print('The specified key has the wrong format')
 
 	if key_source == "env":
-		print("""Since you've chosen env as key source, the master key will be saved into .env at the root of MqttRelay. 
-			If you find this method not secure enough, which it is, remove the key from there and set it in the environment on your own
-		""")
+		print(""" Atention ! Since you've chosen env as key source, the master key will be saved into .env at the root of MqttRelay. 
+If you find this method not secure enough, which it is, remove the key from there and set it in the environment on your own""")
 
 	return {"key_source":key_source, "key":key}
 
@@ -156,9 +156,9 @@ def install_mqtttransfer_service(root_path, virtual_env, logging_dir, services_d
 def install_preset_objects(credentials, admin_user, crypto_config):	
 
 	mqtt_relay = MqttRelay(version=APP_VERSION)
-	crypto_config = CryptoConfig(id=1, algorithm="aes-256-gcm",key_source=crypto_config['key_source'],key_id="PRIMARY",iv_bytes=12, tag_bytes=16, encoding="base64", version=1)
+	crypto_config = CryptoConfig(id=1, algorithm="aes-256-gcm",key_source=crypto_config['key_source'],key_id="PRIMARY",iv_bytes=12, tag_bytes=16, encoding="base64", version=1,updated_at=datetime.now())
 	if crypto_config['key_source'] == "db":
-		MysqlEntityStorage(CryptoKey,**credentials).create(CryptoKey(key_id="PRIMARY",version=1,key_b64=crypto_config['key']))
+		MysqlEntityStorage(CryptoKey,**credentials).create(CryptoKey(key_id="PRIMARY",version=1,key_b64=crypto_config['key']),updated_at=datetime.now())
 	
 	user_storage = MysqlEntityStorage(User,**credentials)
 	privilege_storage = MysqlEntityStorage(Privilege,**credentials)
@@ -168,6 +168,7 @@ def install_preset_objects(credentials, admin_user, crypto_config):
 	user['password'] = admin_user['password']
 
 	MysqlEntityStorage(MqttRelay,**credentials).create(mqtt_relay)
+	MysqlEntityStorage(Language, **credentials).create(Language(code="fr",name="français"))
 	MysqlEntityStorage(CryptoConfig, **credentials).create(crypto_config)
 	privilege_storage.create(admin_privilege)
 	user_storage.create(user)

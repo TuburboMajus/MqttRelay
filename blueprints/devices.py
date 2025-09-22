@@ -52,8 +52,8 @@ def createDevice(form):
 	for field in ["capabilities","payload_schema","defaults_json"]:
 		if form.get(field,"") is not None and form.get(field,'').strip() == "":
 			form[field] = None
-	device = Device(id=-1, created_at=datetime.now(),**form)
-	Device.storage.create(device)
+	device = DeviceType(id=-1, created_at=datetime.now(),**form)
+	DeviceType.storage.create(device)
 	return redirect(url_for("devices.listDevices"))
 
 
