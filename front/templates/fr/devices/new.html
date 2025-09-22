@@ -1,0 +1,230 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}New Device Type - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top:50px;">Add New Device Type</h1>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% if msgs %}
+    {% for category, msg in msgs %}
+      <div class="alert alert-{{ 'danger' if category=='error' else category }} alert-dismissible fade show" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('devices.newDevice') }}" class="needs-validation" novalidate>
+  {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label for="vendor" class="form-label">Vendor</label>
+      <input
+        type="text"
+        class="form-control"
+        id="vendor"
+        name="vendor"
+        placeholder="e.g., Dragino, Bosch"
+        value="{{ request.form.get('vendor','') }}"
+        required
+        maxlength="128"
+        pattern="^[A-Za-z0-9 ._\-]{1,128}$"
+        title="Letters, numbers, spaces, dot, underscore, hyphen (max 128)"
+        autofocus
+        aria-describedby="vendorHelp vendorFeedback vendorModelCheck"
+      />
+      <div class="form-text" id="vendorHelp">Hardware vendor/brand (max 128 chars).</div>
+      <div class="invalid-feedback" id="vendorFeedback">Please enter a valid vendor.</div>
+      <div class="form-text" id="vendorModelCheck" hidden>Checking…</div>
+    </div>
+
+    <div class="col-md-6">
+      <label for="model" class="form-label">Model</label>
+      <input
+        type="text"
+        class="form-control"
+        id="model"
+        name="model"
+        placeholder="e.g., LSE01, BME280"
+        value="{{ request.form.get('model','') }}"
+        required
+        maxlength="128"
+        pattern="^[A-Za-z0-9 ._\-]{1,128}$"
+        title="Letters, numbers, spaces, dot, underscore, hyphen (max 128)"
+        aria-describedby="modelFeedback vendorModelCheck"
+      />
+      <div class="invalid-feedback" id="modelFeedback">Please enter a valid model.</div>
+    </div>
+
+    <div class="col-md-6">
+      <label for="kind" class="form-label">Kind</label>
+      <input
+        list="kindOptions"
+        type="text"
+        class="form-control"
+        id="kind"
+        name="kind"
+        placeholder="sensor"
+        value="{{ request.form.get('kind','sensor') }}"
+        required
+        maxlength="64"
+        pattern="^[a-z0-9-]{1,64}$"
+        title="Lowercase word with hyphens, e.g., sensor, gateway, meter (max 64)"
+        aria-describedby="kindHelp kindFeedback"
+      />
+      <datalist id="kindOptions">
+        <option value="sensor"></option>
+        <option value="gateway"></option>
+        <option value="meter"></option>
+        <option value="actuator"></option>
+        <option value="controller"></option>
+        <option value="camera"></option>
+        <option value="weather-station"></option>
+        <option value="other"></option>
+      </datalist>
+      <div class="form-text" id="kindHelp">Suggested kinds: sensor, gateway, meter, …</div>
+      <div class="invalid-feedback" id="kindFeedback">Please provide a valid kind (lowercase, hyphens allowed).</div>
+    </div>
+
+    <div class="col-md-6">
+      <label for="notes" class="form-label">Notes (optional)</label>
+      <input
+        type="text"
+        class="form-control"
+        id="notes"
+        name="notes"
+        placeholder="Short notes (max 512)"
+        value="{{ request.form.get('notes','') }}"
+        maxlength="512"
+        aria-describedby="notesHelp"
+      />
+      <div class="form-text" id="notesHelp">Any short description or remark.</div>
+    </div>
+
+    <div class="col-12">
+      <label for="capabilities" class="form-label">Capabilities (JSON array of strings)</label>
+      <textarea
+        class="form-control font-monospace"
+        id="capabilities"
+        name="capabilities"
+        rows="3"
+        placeholder='["temperature","humidity","soil_moisture"]'
+        aria-describedby="capHelp capFeedback"
+      >{{ request.form.get('capabilities','') }}</textarea>
+      <div class="form-text" id="capHelp">Leave empty or enter a JSON array of strings.</div>
+      <div class="invalid-feedback" id="capFeedback">Must be valid JSON (array of strings).</div>
+    </div>
+
+    <div class="col-12">
+      <label for="payload_schema" class="form-label">Payload Schema (JSON)</label>
+      <textarea
+        class="form-control font-monospace"
+        id="payload_schema"
+        name="payload_schema"
+        rows="6"
+        placeholder='{"type":"object","properties":{"t":{"type":"number"}}}'
+        aria-describedby="schemaHelp schemaFeedback"
+      >{{ request.form.get('payload_schema','') }}</textarea>
+      <div class="form-text" id="schemaHelp">Optional: JSON schema or parsing hints.</div>
+      <div class="invalid-feedback" id="schemaFeedback">Must be valid JSON.</div>
+    </div>
+
+    <div class="col-12">
+      <label for="defaults_json" class="form-label">Defaults (JSON)</label>
+      <textarea
+        class="form-control font-monospace"
+        id="defaults_json"
+        name="defaults_json"
+        rows="4"
+        placeholder='{"units":{"temperature":"°C"},"scaling":{"soil_moisture":0.1}}'
+        aria-describedby="defaultsHelp defaultsFeedback"
+      >{{ request.form.get('defaults_json','') }}</textarea>
+      <div class="form-text" id="defaultsHelp">Optional: default units, scaling, metadata.</div>
+      <div class="invalid-feedback" id="defaultsFeedback">Must be valid JSON.</div>
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Add Device Type</button>
+    <a href="{{ url_for('devices.listDevices') }}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Debounced uniqueness check for (vendor, model)
+  const vendorEl = document.getElementById('vendor');
+  const modelEl = document.getElementById('model');
+  const comboCheckEl = document.getElementById('vendorModelCheck');
+
+  let checkTimer;
+  function checkUnique() {
+    const vendor = vendorEl.value.trim();
+    const model = modelEl.value.trim();
+    if (!vendor || !model) { comboCheckEl.hidden = true; return; }
+    comboCheckEl.hidden = false;
+    comboCheckEl.textContent = 'Checking…';
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(async () => {
+      try {
+        const url = new URL('{{ url_for("devices.checkUnique") }}', window.location.origin);
+        url.searchParams.set('vendor', vendor);
+        url.searchParams.set('model', model);
+        const r = await fetch(url, {headers: {'Accept': 'application/json'}});
+        const data = await r.json();
+        comboCheckEl.textContent = (data.unique === true) ? '✅ Available' : '❌ Already exists';
+      } catch (e) {
+        comboCheckEl.textContent = '⚠️ Could not check';
+      }
+    }, 300);
+  }
+  vendorEl?.addEventListener('input', checkUnique);
+  modelEl?.addEventListener('input', checkUnique);
+
+  // JSON validators
+  function isArrayOfStrings(v) {
+    return Array.isArray(v) && v.every(x => typeof x === 'string');
+  }
+  function validateJSONField(textareaId, feedbackId, predicate=null) {
+    const el = document.getElementById(textareaId);
+    const fb = document.getElementById(feedbackId);
+    function run() {
+      const raw = el.value.trim();
+      if (!raw) { el.setCustomValidity(''); return; } // empty is allowed
+      try {
+        const parsed = JSON.parse(raw);
+        if (predicate && !predicate(parsed)) {
+          el.setCustomValidity('Invalid shape');
+          fb.textContent = 'Must be a JSON array of strings.'; // specialized message
+        } else {
+          el.setCustomValidity('');
+        }
+      } catch(e) {
+        el.setCustomValidity('Invalid JSON');
+        fb.textContent = 'Invalid JSON syntax.';
+      }
+    }
+    el?.addEventListener('input', run);
+    run();
+  }
+  validateJSONField('capabilities', 'capFeedback', isArrayOfStrings);
+  validateJSONField('payload_schema', 'schemaFeedback', null);
+  validateJSONField('defaults_json', 'defaultsFeedback', null);
+
+  // Bootstrap client-side validation
+  (function () {
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(forms).forEach(function (form) {
+      form.addEventListener('submit', function (event) {
+        if (!form.checkValidity()) { event.preventDefault(); event.stopPropagation(); }
+        form.classList.add('was-validated');
+      }, false);
+    });
+  })();
+</script>
+
+{% endblock %}

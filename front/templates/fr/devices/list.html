@@ -1,0 +1,41 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Devices - DIGI UP DATA{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top: 50px;">Devices</h1>
+
+<a href="{{ url_for('devices.newDevice') }}" class="btn btn-secondary">
+    <i class="bi bi-plus"></i> New Device
+</a>
+
+<table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
+    <thead class="table-dark">
+        <tr>
+            <th>ID</th>
+            <th>Vendor</th>
+            <th>Model</th>
+            <th>Kind</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for device in pagination.current %}
+        <tr>
+            <td>{{ device.id }}</td>
+            <td>{{ device['vendor'] }}</td>
+            <td>{{ device['model'] }}</td>
+            <td>{{ device['kind'] }}</td>
+            <td>
+                <a href="{{ url_for('devices.viewDevice', device_id=device.id) }}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-eye"></i> View
+                </a>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="5" class="text-center text-muted">No devices found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,5 +1,9 @@
+cryptography==3.4.8
+Django==5.0.4
 Flask==3.1.2
+Flask_Login==0.6.3
 flask_mqtt==1.2.1
+PyMySQL==1.1.1
 PyYAML==6.0.2
 temod==2.2.2
 temod_flask==2.2.3

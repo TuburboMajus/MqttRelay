@@ -1,0 +1,184 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}New Parser - TechDash{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top: 50px;">New Parser</h1>
+
+<a href="{{ url_for('parsers.listParsers') }}" class="btn btn-outline-secondary mb-3">
+  <i class="bi bi-arrow-left"></i> Back to Parsers
+</a>
+
+<form action="{{ url_for('parsers.createParser') }}" method="POST" class="needs-validation" novalidate>
+  {% if csrf_token is defined %}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% endif %}
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+      <input
+        id="name"
+        name="name"
+        class="form-control"
+        required
+        placeholder="e.g., LSE01 Payload Parser"
+        pattern="^[A-Za-z0-9 ]+$"
+        maxlength="128"
+        aria-describedby="nameHelp">
+      <div id="nameHelp" class="form-text">Letters, numbers and spaces only.</div>
+      <div class="invalid-feedback">Use only letters, numbers and spaces.</div>
+    </div>
+
+    <div class="col-md-3">
+      <label for="version" class="form-label">Version <span class="text-danger">*</span></label>
+      <input
+        id="version"
+        name="version"
+        class="form-control"
+        required
+        placeholder="e.g., 1.0.0"
+        pattern="^[0-9]+(\.[0-9]+){2}$"
+        maxlength="32"
+        aria-describedby="versionHelp">
+      <div id="versionHelp" class="form-text">Semantic format <code>x.x.x</code> (e.g., 1.2.3).</div>
+      <div class="invalid-feedback">Version must match <code>x.x.x</code> (e.g., 1.2.3).</div>
+    </div>
+
+    <div class="col-md-3">
+      <label for="language" class="form-label">Language</label>
+      <select id="language" name="language" class="form-select">
+        <option value="" selected>— Select —</option>
+        <option value="python">Python</option>
+        <option value="javascript">JavaScript</option>
+        <option value="sql">SQL</option>
+        <option value="bash">Bash</option>
+        <option value="go">Go</option>
+        <option value="rust">Rust</option>
+      </select>
+    </div>
+
+    <div class="col-12">
+      <label for="description" class="form-label">Description</label>
+      <textarea id="description" name="description" class="form-control" rows="3" placeholder="Short description of what this parser does..."></textarea>
+    </div>
+
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-center">
+        <label for="config_schema" class="form-label mb-0">Config Schema (JSON)</label>
+        <div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnFormatJson">
+            <i class="bi bi-braces"></i> Format JSON
+          </button>
+          <span id="jsonStatus" class="ms-2 small text-muted"></span>
+        </div>
+      </div>
+      <textarea id="config_schema" name="config_schema" class="form-control font-monospace" rows="10"
+        placeholder='{
+  "type": "object",
+  "properties": {
+    "timezone": {"type": "string"},
+    "scale": {"type": "number"},
+    "offset": {"type": "number"},
+    "topic_filter": {"type": "string"}
+  },
+  "additionalProperties": true
+}'></textarea>
+      <div class="form-text">
+        Optional JSON Schema describing the parser instance configuration (used in UI validation and auditing).
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="active" name="active" checked>
+        <label class="form-check-label" for="active">Active</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-save"></i> Create Parser
+    </button>
+    <a href="{{ url_for('parsers.listParsers') }}" class="btn btn-outline-secondary">
+      Cancel
+    </a>
+  </div>
+</form>
+
+<script>
+(() => {
+  const form = document.querySelector('form.needs-validation');
+  const nameEl = document.getElementById('name');
+  const versionEl = document.getElementById('version');
+
+  // Live sanitization for name: allow only A-Z a-z 0-9 and spaces
+  nameEl.addEventListener('input', () => {
+    const cleaned = nameEl.value.replace(/[^A-Za-z0-9 ]+/g, '');
+    if (cleaned !== nameEl.value) nameEl.value = cleaned;
+    // collapse multiple spaces
+    nameEl.value = nameEl.value.replace(/\s{2,}/g, ' ');
+  });
+
+  // Optional helper: block invalid characters for version (digits and dots)
+  versionEl.addEventListener('input', () => {
+    const cleaned = versionEl.value.replace(/[^0-9.]/g, '');
+    if (cleaned !== versionEl.value) versionEl.value = cleaned;
+  });
+
+  // Bootstrap + custom validation
+  form.addEventListener('submit', function (event) {
+    // trim fields
+    nameEl.value = nameEl.value.trim().replace(/\s{2,}/g, ' ');
+    versionEl.value = versionEl.value.trim();
+
+    // Validate JSON if provided
+    const ta = document.getElementById('config_schema');
+    const status = document.getElementById('jsonStatus');
+    const txt = ta.value.trim();
+    if (txt.length) {
+      try {
+        JSON.parse(txt);
+        status.textContent = 'JSON looks valid ✓';
+        status.className = 'ms-2 small text-success';
+      } catch (e) {
+        status.textContent = 'Invalid JSON ✗';
+        status.className = 'ms-2 small text-danger';
+        event.preventDefault();
+        event.stopPropagation();
+        ta.focus();
+        return false;
+      }
+    } else {
+      status.textContent = '';
+      status.className = 'ms-2 small text-muted';
+    }
+
+    // Native pattern/required checks
+    if (!form.checkValidity()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    form.classList.add('was-validated');
+  }, false);
+
+  // Pretty-print JSON
+  document.getElementById('btnFormatJson').addEventListener('click', () => {
+    const ta = document.getElementById('config_schema');
+    const status = document.getElementById('jsonStatus');
+    const txt = ta.value.trim();
+    if (!txt) return;
+    try {
+      const obj = JSON.parse(txt);
+      ta.value = JSON.stringify(obj, null, 2);
+      status.textContent = 'Formatted ✓';
+      status.className = 'ms-2 small text-success';
+    } catch (e) {
+      status.textContent = 'Invalid JSON ✗';
+      status.className = 'ms-2 small text-danger';
+    }
+  });
+})();
+</script>
+
+{% endblock %}

@@ -1,5 +1,8 @@
-from flask import Flask
+from flask import Flask, redirect, url_for
 from flask_mqtt import Mqtt
+from flask_login import current_user, login_required
+
+from temod_flask.security.authentification import Authenticator, TemodUserHandler
 
 from temod.ext.holders import init_holders
 
@@ -24,6 +27,9 @@ mimetypes.add_type('text/javascript', '.min.js')
 # ** Section ** LoadConfiguration
 with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),"config.toml")) as config_file:
 	config = toml.load(config_file)
+
+with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),"dictionnary.yml")) as dictionnary_file:
+    dictionnary = yaml.safe_load(dictionnary_file.read())
 # ** EndSection ** LoadConfiguration
 
 
@@ -65,21 +71,42 @@ def build_app(**app_configuration):
 	app.secret_key = secret_key if len(secret_key) > 0 else generate_secret_key(32)
 	app.config.update({k:v for k,v in config['app'].items() if not type(v) is dict})
 	app.config.update({f"MQTT_{k.upper()}":v for k,v in config['mqtt'].items() if not type(v) is dict})
+	app.config['LANGUAGES'] = {language["code"]:language for language in Language.storage.list()}
+	app.config['DICTIONNARY'] = dictionnary
 
 	# ** Section ** Blueprint
 	import blueprints
 
+	# ** Section ** Authentification
+	AUTHENTICATOR = Authenticator(TemodUserHandler(
+		joins.UserAccount, "mysql", logins=['email'], **config['storage']['credentials']
+	),login_view="auth.login")
+	AUTHENTICATOR.init_app(app)
+	# ** EndSection ** Authentification
+
+	auth_blueprint_config = config['app'].get('blueprints',{}).get('auth',{})
+	auth_blueprint_config['authenticator'] = AUTHENTICATOR
+
 	mqtt_blueprint_config = config['app'].get('blueprints',{}).get('mqtt',{})
+	app.register_blueprint(blueprints.destinations_blueprint.setup(config['app'].get('blueprints',{}).get('destinations',{})))
+	app.register_blueprint(blueprints.dashboard_blueprint.setup(config['app'].get('blueprints',{}).get('dashboard',{})))
+	app.register_blueprint(blueprints.clients_blueprint.setup(config['app'].get('blueprints',{}).get('clients',{})))
+	app.register_blueprint(blueprints.devices_blueprint.setup(config['app'].get('blueprints',{}).get('devices',{})))
+	app.register_blueprint(blueprints.parsers_blueprint.setup(config['app'].get('blueprints',{}).get('parsers',{})))
+	app.register_blueprint(blueprints.general_blueprint.setup(config['app'].get('blueprints',{}).get('general',{})))
+	app.register_blueprint(blueprints.metrics_blueprint.setup(config['app'].get('blueprints',{}).get('metrics',{})))
+	app.register_blueprint(blueprints.topics_blueprint.setup(config['app'].get('blueprints',{}).get('topics',{})))
+	app.register_blueprint(blueprints.routes_blueprint.setup(config['app'].get('blueprints',{}).get('routes',{})))
+	app.register_blueprint(blueprints.users_blueprint.setup(config['app'].get('blueprints',{}).get('users',{})))
 	app.register_blueprint(blueprints.mqtt_blueprint.setup(mqtt_blueprint_config).setup_mqtt(Mqtt(app)))
+	app.register_blueprint(blueprints.auth_blueprint.setup(auth_blueprint_config))
 	# ** EndSection ** Blueprint**
 
 	# ** Section ** AppMainRoutes
 	@app.route('/', methods=['GET'])
+	@login_required
 	def home():
-		if current_user.is_anonymous:
-			if request.args.get("access") is not None:
-				return redirect(url_for("auth.login",access=request.args.get("access")))
-		return redirect(url_for('report.listReports'))
+		return redirect(url_for('clients.listClients'))
 	# ** EndSection ** AppMainRoutes
 
 	return app

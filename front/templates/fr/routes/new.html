@@ -1,0 +1,415 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}New Routing Rule - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top: 50px;">Add Routing Rule</h1>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% if msgs %}
+    {% for category, msg in msgs %}
+      <div class="alert alert-{{ 'danger' if category=='error' else category }} alert-dismissible fade show" role="alert">
+        {{ msg }}
+        <button type="button" class="btn btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('routes.newRoutingRule') }}" class="needs-validation" novalidate>
+  {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+
+  <div class="row g-3">
+
+    <!-- CLIENT (required) -->
+    <div class="col-md-6">
+      <label for="client_select" class="form-label">Client</label>
+      <select id="client_select" class="form-select" required>
+        {% if request.form.get('client_id') and request.form.get('client_name') %}
+          <option value="{{ request.form.get('client_id') }}" selected>{{ request.form.get('client_name') }}</option>
+        {% else %}
+          <option value="" selected disabled>Type to search clients…</option>
+        {% endif %}
+      </select>
+      <input type="hidden" id="client_id" name="client_id" value="{{ request.form.get('client_id','') }}" required>
+      <div class="form-text">Selecting a client will filter topics, devices, and destinations.</div>
+      <div class="invalid-feedback">Please choose a client.</div>
+    </div>
+
+    <!-- PRIORITY -->
+    <div class="col-md-3">
+      <label for="priority" class="form-label">Priority</label>
+      <input type="number" class="form-control" id="priority" name="priority"
+             min="0" max="100000" step="1"
+             value="{{ request.form.get('priority','100') }}" required>
+      <div class="form-text">Lower value = higher priority. Default is 100.</div>
+      <div class="invalid-feedback">Please provide a valid priority.</div>
+    </div>
+
+    <!-- ACTIVE -->
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check form-switch">
+        {% set active_val = request.form.get('active','1') %}
+        <input class="form-check-input" type="checkbox" id="active" name="active"
+               value="1" {{ 'checked' if active_val in ['1','true','on'] else '' }}>
+        <label class="form-check-label" for="active">Active</label>
+      </div>
+    </div>
+
+    <hr class="mt-2 mb-1"/>
+
+    <!-- TOPIC (optional, filtered by client) -->
+    <div class="col-md-6">
+      <label for="topic_select" class="form-label">Topic (optional)</label>
+      <select id="topic_select" class="form-select" {% if not request.form.get('client_id') %}disabled{% endif %}>
+        <option value="" selected>Any topic</option>
+      </select>
+      <input type="hidden" id="topic_id" name="topic_id" value="{{ request.form.get('topic_id','') }}">
+      <div class="form-text">Leave empty to match any topic for this client.</div>
+    </div>
+
+    <!-- DEVICE (optional, filtered by client) -->
+    <div class="col-md-6">
+      <label for="device_select" class="form-label">Device (optional)</label>
+      <select id="device_select" class="form-select" {% if not request.form.get('client_id') %}disabled{% endif %}>
+        <option value="" selected>Any device</option>
+      </select>
+      <input type="hidden" id="device_id" name="device_id" value="{{ request.form.get('device_id','') }}">
+      <div class="form-text">Leave empty to match any device for this client.</div>
+    </div>
+
+    <!-- PARSER -->
+    <div class="col-md-6">
+      <label for="parser_select" class="form-label">Parser</label>
+      <select id="parser_select" class="form-select">
+        <option value="" selected disabled>Type to search parsers…</option>
+      </select>
+      <input type="hidden" id="parser_id" name="parser_id" value="{{ request.form.get('parser_id','') }}">
+      <div class="form-text">Choose the parser that will handle matching messages.</div>
+      <div class="invalid-feedback">Please choose a parser.</div>
+    </div>
+
+    <!-- PARSER CONFIG (plain JSON) -->
+    <div class="col-md-6">
+      <label for="parser_config" class="form-label">Parser Config (JSON)</label>
+      <textarea class="form-control font-monospace" id="parser_config" name="parser_config"
+                rows="6" placeholder='{"threshold":25,"units":"C","map":{"temp":"t","hum":"h"}}'
+                aria-describedby="parserConfigHelp parserConfigFeedback">{{ request.form.get('parser_config','') }}</textarea>
+      <div class="form-text" id="parserConfigHelp">Optional configuration object passed to the parser (plain JSON).</div>
+      <div class="invalid-feedback" id="parserConfigFeedback">Invalid JSON.</div>
+    </div>
+
+    <!-- CONDITIONS (mongo_dsl JSON) -->
+    <div class="col-12">
+      <label for="conditions" class="form-label">Conditions (mongo_dsl JSON, optional)</label>
+      <textarea class="form-control font-monospace" id="conditions" name="conditions"
+                rows="6" placeholder='{"payload.temp":{"$gt":25}}'
+                aria-describedby="conditionsHelp conditionsFeedback">{{ request.form.get('conditions','') }}</textarea>
+      <div class="form-text" id="conditionsHelp">
+        Optional payload/message filters in mongo_dsl (e.g., {"payload.type":"lse01"}).
+      </div>
+      <div class="invalid-feedback" id="conditionsFeedback">Invalid JSON.</div>
+    </div>
+
+    <hr class="mt-2 mb-1"/>
+
+    <!-- DESTINATIONS (multi-select, filtered by client) -->
+    <div class="col-12">
+      <label for="destinations_select" class="form-label">Destinations</label>
+      <select id="destinations_select" class="form-select" multiple {% if not request.form.get('client_id') %}disabled{% endif %}></select>
+      <!-- Server expects: destination_ids[] -->
+      <div id="destinations_hidden_container">
+        {% for did in request.form.getlist('destination_ids[]') %}
+          <input type="hidden" name="destination_ids[]" value="{{ did }}">
+        {% endfor %}
+      </div>
+      <div class="form-text">Pick one or more active destinations for this client.</div>
+    </div>
+
+  </div>
+
+  <div class="mt-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Create Rule</button>
+    <a href="{{ url_for('routes.listRoutingRules') }}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Tom Select (searchable selects) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+<script>
+  // ---------- Helpers ----------
+  async function fetchJSON(url){
+    const r = await fetch(url, { headers: { 'Accept':'application/json' }});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+  function debounce(fn, ms=300){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+  function jsonValidator(textareaId, feedbackId){
+    const el = document.getElementById(textareaId);
+    const fb = document.getElementById(feedbackId);
+    function run(){
+      const raw = el.value.trim();
+      if (!raw){ el.setCustomValidity(''); return; }
+      try { JSON.parse(raw); el.setCustomValidity(''); }
+      catch(e){ el.setCustomValidity('Invalid JSON'); if(fb) fb.textContent = 'Invalid JSON syntax.'; }
+    }
+    el?.addEventListener('input', run);
+    run();
+  }
+
+  // ---------- Elements ----------
+  const clientIdEl  = document.getElementById('client_id');
+  const topicIdEl   = document.getElementById('topic_id');
+  const deviceIdEl  = document.getElementById('device_id');
+  const parserIdEl  = document.getElementById('parser_id');
+
+  const destSelectEl = document.getElementById('destinations_select');
+  const destHiddenWrap = document.getElementById('destinations_hidden_container');
+
+  // ---------- Tom Select instances ----------
+  // Client select with remote search
+  const clientTS = new TomSelect('#client_select', {
+    valueField: 'id',
+    labelField: 'name',
+    searchField: ['name'],
+    create: false,
+    allowEmptyOption: true,
+    placeholder: 'Type to search clients…',
+    loadThrottle: 300,
+    load: async (query, callback) => {
+      if (!query || !query.trim()) return callback();
+      try {
+        const url = new URL('/clients', window.location.origin);
+        url.searchParams.set('name', query.trim());
+        url.searchParams.set('json', 'true');
+        const data = await fetchJSON(url);
+        const items = (Array.isArray(data) ? data : (data.items || []))
+          .map(c => ({ id: c.id ?? c._id ?? c.uuid ?? '', name: c.name ?? c.title ?? '' }))
+          .filter(it => it.id && it.name);
+        callback(items);
+      } catch { callback(); }
+    },
+    onChange: async (val) => {
+      clientIdEl.value = val || '';
+      await reloadFilteredLists();
+    }
+  });
+
+  // Topic (filtered by client)
+  const topicTS = new TomSelect('#topic_select', {
+    valueField: 'id',
+    labelField: 'label',
+    searchField: ['label'],
+    create: false,
+    allowEmptyOption: true,
+    placeholder: 'Any topic',
+    onChange: (val) => { topicIdEl.value = val || ''; }
+  });
+
+  // Device (filtered by client)
+  const deviceTS = new TomSelect('#device_select', {
+    valueField: 'id',
+    labelField: 'label',
+    searchField: ['label'],
+    create: false,
+    allowEmptyOption: true,
+    placeholder: 'Any device',
+    onChange: (val) => { deviceIdEl.value = val || ''; }
+  });
+
+  // Parser (global list or filterable if you have such endpoint)
+  const parserTS = new TomSelect('#parser_select', {
+    valueField: 'id',
+    labelField: 'name',
+    searchField: ['name','code'],
+    create: false,
+    allowEmptyOption: true,
+    placeholder: 'Type to search parsers…',
+    loadThrottle: 300,
+    load: async (query, callback) => {
+      try {
+        const url = new URL('/parsers', window.location.origin);
+        if (query && query.trim()) url.searchParams.set('name', query.trim());
+        url.searchParams.set('active', '1');
+        url.searchParams.set('json', 'true');
+        const data = await fetchJSON(url);
+        const items = (Array.isArray(data) ? data : (data.items || []))
+          .map(p => ({ id: p.id ?? p._id ?? '', name: p.name ?? p.code ?? ('parser#'+(p.id||'')) }))
+          .filter(it => it.id && it.name);
+        callback(items);
+      } catch { callback(); }
+    },
+    onChange: (val) => { parserIdEl.value = val || ''; }
+  });
+
+  // Destinations (multi-select, filtered by client)
+  const destTS = new TomSelect('#destinations_select', {
+    valueField: 'id',
+    labelField: 'label',
+    searchField: ['label','type'],
+    create: false,
+    plugins: ['remove_button'],
+    placeholder: 'Select one or more destinations…',
+    onChange: (values) => syncDestinationHidden(values)
+  });
+
+  function syncDestinationHidden(values){
+    destHiddenWrap.innerHTML = '';
+    (values || []).forEach(v => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'destination_ids[]';
+      input.value = v;
+      destHiddenWrap.appendChild(input);
+    });
+  }
+
+  // ---------- Loaders filtered by client ----------
+  async function reloadFilteredLists(){
+    const clientId = clientIdEl.value.trim();
+    const hasClient = !!clientId;
+
+    topicTS.disable(); deviceTS.disable(); destTS.disable();
+    if (!hasClient){
+      topicTS.clear(true); topicTS.clearOptions();
+      deviceTS.clear(true); deviceTS.clearOptions();
+      destTS.clear(true); destTS.clearOptions();
+      document.getElementById('topic_select').disabled = true;
+      document.getElementById('device_select').disabled = true;
+      document.getElementById('destinations_select').disabled = true;
+      syncDestinationHidden([]);
+      return;
+    }
+
+    document.getElementById('topic_select').disabled = false;
+    document.getElementById('device_select').disabled = false;
+    document.getElementById('destinations_select').disabled = false;
+
+    await Promise.all([
+      loadTopics(clientId),
+      loadDevices(clientId),
+      loadDestinations(clientId),
+    ]);
+
+    topicTS.enable(); deviceTS.enable(); destTS.enable();
+  }
+
+  async function loadTopics(clientId){
+    try{
+      const url = new URL('/topics', window.location.origin);
+      url.searchParams.set('client_id', clientId);
+      url.searchParams.set('json', 'true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data) ? data : (data.items||[]))
+        .map(t => ({ id: t.mqtt_topic?.id ?? t.id ?? t.topic_id ?? '', label: t.mqtt_topic?.topic ?? t.topic ?? t.topic_string ?? ('topic#'+(t.id||'')) }))
+        .filter(x => x.id && x.label);
+
+      topicTS.clearOptions();
+      topicTS.addOption({ id:'', label:'Any topic' });
+      items.forEach(x => topicTS.addOption(x));
+      const cur = "{{ request.form.get('topic_id','') }}".trim();
+      if (cur) topicTS.setValue(cur, true);
+    }catch{
+      topicTS.clearOptions();
+      topicTS.addOption({ id:'', label:'(failed to load topics)' });
+    }
+  }
+
+  async function loadDevices(clientId){
+    try{
+      const url = new URL('/devices', window.location.origin);
+      url.searchParams.set('client_id', clientId);
+      url.searchParams.set('json', 'true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data) ? data : (data.items||[]))
+        .map(d => {
+          const label = d.label || [d.vendor, d.model, d.serial || d.sn].filter(Boolean).join(' ');
+          return { id: d.id ?? d._id ?? d.uuid ?? '', label: label || ('device#'+(d.id||'')) };
+        })
+        .filter(x => x.id && x.label);
+
+      deviceTS.clearOptions();
+      deviceTS.addOption({ id:'', label:'Any device' });
+      items.forEach(x => deviceTS.addOption(x));
+      const cur = "{{ request.form.get('device_id','') }}".trim();
+      if (cur) deviceTS.setValue(cur, true);
+    }catch{
+      deviceTS.clearOptions();
+      deviceTS.addOption({ id:'', label:'(failed to load devices)' });
+    }
+  }
+
+  async function loadDestinations(clientId){
+    try{
+      const url = new URL('/client_destinations', window.location.origin);
+      url.searchParams.set('client_id', clientId);
+      url.searchParams.set('active', '1');
+      url.searchParams.set('json', 'true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data) ? data : (data.items||[]))
+        .map(x => {
+          const labelParts = [x.type?.toUpperCase()];
+          if (x.host) labelParts.push(x.host + (x.port?(':'+x.port):''));
+          if (x.database_name) labelParts.push(x.database_name);
+          if (x.uri) labelParts.push(x.uri);
+          return { id: x.id ?? x._id ?? '', label: labelParts.filter(Boolean).join(' · ') || ('dest#'+(x.id||'')) };
+        })
+        .filter(x => x.id && x.label);
+
+      destTS.clearOptions();
+      items.forEach(x => destTS.addOption(x));
+
+      const existing = {{ request.form.getlist('destination_ids[]')|tojson|safe if request.form else '[]' }};
+      if (existing.length) destTS.setValue(existing, true);
+      else destTS.clear(true);
+
+      syncDestinationHidden(destTS.getValue());
+    }catch{
+      destTS.clearOptions();
+    }
+  }
+
+  // ---------- Validation & Init ----------
+  jsonValidator('parser_config', 'parserConfigFeedback');   // plain JSON
+  jsonValidator('conditions', 'conditionsFeedback');        // mongo_dsl JSON
+
+  (function(){
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(forms).forEach(function(form){
+      form.addEventListener('submit', function(event){
+        if (!clientIdEl.value) { event.preventDefault(); event.stopPropagation(); }
+        if (!document.getElementById('priority').value) { event.preventDefault(); event.stopPropagation(); }
+        form.classList.add('was-validated');
+      }, false);
+    });
+  })();
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    const existingClientId = "{{ request.form.get('client_id','') }}".trim();
+    const existingClientName = "{{ request.form.get('client_name','') }}".trim();
+    if (existingClientId && existingClientName) {
+      clientTS.addOption({ id: existingClientId, name: existingClientName });
+      clientTS.setValue(existingClientId, true);
+    }
+    if (clientIdEl.value) await reloadFilteredLists();
+
+    try {
+      const url = new URL('/parsers', window.location.origin);
+      url.searchParams.set('active','1');
+      url.searchParams.set('json','true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data) ? data : (data.items||[]))
+        .map(p => ({ id: p.id ?? p._id ?? '', name: p.name ?? p.code ?? ('parser#'+(p.id||'')) }))
+        .filter(it => it.id && it.name);
+      items.forEach(p => parserTS.addOption(p));
+      const curParser = "{{ request.form.get('parser_id','') }}".trim();
+      if (curParser) parserTS.setValue(curParser, true);
+    } catch {}
+  });
+</script>
+{% endblock %}

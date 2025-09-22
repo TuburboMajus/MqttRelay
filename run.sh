@@ -4,7 +4,7 @@ SCRIPT=$(realpath "$0")
 SCRIPTPATH=$(dirname "$SCRIPT")
 
 prod=`python -c "import toml, os; print(toml.load(os.path.join('$SCRIPTPATH','config.toml'))['app']['prod']);"`
-workers="${1:1}"
+workers="4"
 
 echo "Running server with $workers workers"
 

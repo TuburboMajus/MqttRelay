@@ -1,0 +1,22 @@
+<script type="text/javascript">
+  var formatRelativeTime = function(dom){
+    let date = new Date(dom.dataset.time)
+    if(date == "Invalid Date") return;
+
+    let diff = (new Date() - date)/1000
+    if(diff >= 2*24*3600){
+      dom.innerHTML = dom.dataset.time;
+    }else if(diff >= 24*3600){
+      dom.innerHTML = "hier"
+    }else if(diff >= 3600){
+      dom.innerHTML = `Il y a ${Math.floor(diff/3600)}h`
+    }else if(diff >= 60){
+      dom.innerHTML = `Il y a ${Math.floor(diff/60)} min`
+    }else{
+      dom.innerHTML = `Il y a moins d'une minute`
+    }
+    
+  }
+
+  Object.values(document.getElementsByClassName('relative-time-displayer')).forEach(formatRelativeTime)
+</script>

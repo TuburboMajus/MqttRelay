@@ -1,0 +1,33 @@
+en:
+  login:
+    account_deactivated: Your account has been deactivated. Contact your administrator or the support team.
+    wrong_identifiers: No account found with these identifiers
+  signup:
+    account_name_error: Wrong format for account name
+    unauthorized_account_name: This account name {} is unauthorized
+    unmatched_passwords: Passwords do not match
+    email_already_used: This email address is already in use.
+    account_name_already_user: This account name is already in use
+    email_error: Incorrect email
+fr:
+  login:
+    account_deactivated: Votre compte a été désactivé. Contactez votre administrateur ou l'équipe de support.
+    wrong_identifiers: Aucun compte trouvé avec ces identifiants
+  signup:
+    account_name_error: Format incorrect pour le nom de compte
+    unauthorized_account_name: Ce nom de compte {} n'est pas autorisé
+    unmatched_passwords: Les mots de passe ne correspondent pas
+    email_already_used: Cette adresse email est déjà utilisée.
+    account_name_already_user: Ce nom de compte est déjà utilisé
+    email_error: Adresse email incorrecte
+ar:
+  login:
+    account_deactivated: تم تعطيل حسابك. اتصل بمسؤولك أو بفريق الدعم.
+    wrong_identifiers: لم يتم العثور على حساب بهذه المعرفات
+  signup:
+    account_name_error: تنسيق غير صحيح لاسم الحساب
+    unauthorized_account_name: اسم الحساب هذا {} غير مصرح به
+    unmatched_passwords: كلمات المرور غير متطابقة
+    email_already_used: عنوان البريد الإلكتروني هذا مستخدم بالفعل.
+    account_name_already_user: اسم الحساب هذا مستخدم بالفعل
+    email_error: بريد إلكتروني غير صحيح

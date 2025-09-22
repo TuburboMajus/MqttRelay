@@ -1,0 +1,12 @@
+[Unit]
+Description=Parses and transfers data incomming through mqtt to clients
+After=mysql.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/bin/bash $script_path $logging_dir $venv_path
+
+[Install]
+WantedBy=multi-user.target
