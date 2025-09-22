@@ -1,10 +1,6 @@
 /******************************\
  *  INITIALIZE
-\******************************/ 
-
-SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-SET sql_require_primary_key = 0;
-
+\******************************/
 drop database IF EXISTS $database;
 create database $database;
 use $database;
@@ -60,6 +56,7 @@ CREATE TABLE client (
   slug          VARCHAR(64)  NOT NULL UNIQUE,
   name          VARCHAR(255) NOT NULL,
   contact_email VARCHAR(255),
+  phone         VARCHAR(150),
   status        ENUM('active','paused','disabled') NOT NULL DEFAULT 'active',
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
@@ -80,9 +77,7 @@ CREATE TABLE client_destination (
   options_json   JSON,                    -- e.g. SSL params, schema, table, headers
   active         TINYINT(1) NOT NULL DEFAULT 1,
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_dest_client
-    FOREIGN KEY (client_id) REFERENCES client(id)
-    ON DELETE CASCADE
+  CONSTRAINT fk_dest_client FOREIGN KEY (client_id) REFERENCES client(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- =========================
@@ -110,6 +105,10 @@ CREATE TABLE device (
   name           VARCHAR(255),
   metadata_json  JSON,                            -- per-device overrides/meta
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  installed TINYINT(1) NOT NULL DEFAULT 0,
+  working TINYINT(1) NOT NULL DEFAULT 1,
+  topic VARCHAR(256),
+  emission_rate BIGINT UNSIGNED NOT NULL DEFAULT 1200000,
   CONSTRAINT fk_dev_client
     FOREIGN KEY (client_id) REFERENCES client(id)
     ON DELETE SET NULL,
@@ -162,7 +161,8 @@ CREATE TABLE IF NOT EXISTS mqtt_message (
     payload TEXT NULL,
     qos TINYINT UNSIGNED NOT NULL DEFAULT 0,
     at DATETIME NOT NULL,
-    processed bool NOT NULL DEFAULT 0,
+    processed BOOL NOT NULL DEFAULT 0,
+    processor VARCHAR(36),
     PRIMARY KEY (id),
     INDEX idx_topic_received (topic, at),
     INDEX idx_received (at)
@@ -290,14 +290,14 @@ CREATE TABLE routing_rule (
 
 CREATE TABLE route_deposit (
   rule_id    VARCHAR(36) NOT NULL,
-  destination_id     BIGINT UNSIGNED NOT NULL,
+  destination_id   BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (rule_id, destination_id),
   CONSTRAINT fk_rd_rule
     FOREIGN KEY (rule_id) REFERENCES routing_rule(id)
     ON DELETE CASCADE,
   CONSTRAINT fk_rd_destination
     FOREIGN KEY (destination_id) REFERENCES client_destination(id)
-    ON DELETE SET NULL,
+    ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE dispatch (

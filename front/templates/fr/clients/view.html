@@ -702,7 +702,7 @@ document.getElementById('addDeviceForm').addEventListener('submit', async (e) =>
       topic: form.topic.value.trim(),
       installed: !!form.installed.checked,
       working: !!form.working.checked,
-      emission_rate_seconds: eraw === '' ? null : parseInt(eraw, 10),
+      emission_rate: eraw === '' ? null : parseInt(eraw, 10),
       metadata_json: safeJsonParse(form.metadata_json.value)
     };
     const url = "{{ url_for('clients.addDevice', client_id=client['id']) }}";

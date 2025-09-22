@@ -58,7 +58,7 @@ class CryptoConfig(Entity):
 		{"name":"tag_bytes","type":IntegerAttribute,"required":True,"default_value":16,"is_nullable":False},
 		{"name":"encoding","type":EnumAttribute,"values":["base64","hex"],"required":True,"default_value":"base64","is_nullable":False},
 		{"name":"version","type":IntegerAttribute,"required":True,"default_value":1,"is_nullable":False},
-		{"name":"updated_at","type":DateTimeAttribute,"required":True,"is_nullable":False}
+		{"name":"updated_at","type":DateTimeAttribute}
 	]
 
 
@@ -89,7 +89,7 @@ class CryptoKey(Entity):
 		{"name":"key_id","type":StringAttribute,"max_length":128,"required":True,"is_id":True,"is_nullable":False},
 		{"name":"key_b64","type":StringAttribute,"max_length":64,"required":True,"is_nullable":False},
 		{"name":"version","type":IntegerAttribute,"required":True,"default_value":1,"is_nullable":False},
-		{"name":"updated_at","type":DateTimeAttribute,"required":True,"default_value":"CURRENT_TIMESTAMP","is_nullable":False}
+		{"name":"updated_at","type":DateTimeAttribute}
 	]
 
 	# ---- key retrieval ----
