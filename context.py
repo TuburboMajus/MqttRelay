@@ -2,6 +2,7 @@ from temod.ext.holders import clusters, joins, entities
 from temod_flask.ext import _readers_holder as _FormReaders
 from temod.storage.directory import DirectoryStorage
 
+import dotenv
 import random
 import os
 
@@ -28,6 +29,8 @@ def init_context(config):
 		if name in __builtins__:
 			print(f'Warning: cannot register cluster {name} in the global context as {name} is already used');continue
 		__builtins__[name] = cluster
+
+	dotenv.load_dotenv()
 
 
 # ** Section ** GenerateSecretKey

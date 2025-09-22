@@ -9,7 +9,6 @@ drop database IF EXISTS $database;
 create database $database;
 use $database;
 
-
 -- =========================
 -- 1) APP
 -- =========================
@@ -29,8 +28,6 @@ create table if not exists job(
     last_state_update datetime not null,
     last_exit_code int
 );
-
-
 
 -- =========================
 -- 2) USERS
@@ -54,7 +51,6 @@ create table user(
     track bool not null default 0,
     foreign key (privilege) references privilege(id)
 );
-
 
 -- =========================
 -- 3) Tenants / Clients
@@ -124,7 +120,6 @@ CREATE TABLE device (
   KEY idx_dev_type (device_type_id)
 ) ENGINE=InnoDB;
 
-
 -- =========================
 -- 5) Mqtt
 -- =========================
@@ -160,7 +155,7 @@ CREATE TABLE mqtt_broker (
     ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS mqtt_messages (
+CREATE TABLE IF NOT EXISTS mqtt_message (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     client VARCHAR(255) NOT NULL,
     topic VARCHAR(255) NOT NULL,
@@ -263,7 +258,6 @@ CREATE TABLE latest_value (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-
 -- =========================
 -- 7) Routing Helpers
 -- =========================
@@ -331,7 +325,6 @@ CREATE TABLE dispatch (
   KEY idx_disp_status_next (status, next_retry_at),
   KEY idx_disp_created (created_at)
 ) ENGINE=InnoDB;
-
 
 -- =========================
 -- 8) Encryption

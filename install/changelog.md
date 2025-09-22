@@ -10,7 +10,7 @@
 
 ### Contributors
 
-- PyAxolotl / ChatGPT 5
+- PyAxolotl
 
 ## Version 1.0.0
 
