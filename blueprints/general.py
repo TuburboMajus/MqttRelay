@@ -131,7 +131,7 @@ def testCrypto(form):
 def rotateCryptoKey(form):
 	"""
 	Rotate the active key. Behavior by key_source:
-	- env: we cannot set env vars here; instruct operator to update TECHDASH_ENC_KEY_<KEY_ID>
+	- env: we cannot set env vars here; instruct operator to update MQTT_RELAY_ENC_KEY_<KEY_ID>
 	- kms: call your KMS rotation or create a new key version (implement _load_key_from_kms/_rotate_kms_key)
 	- db: generate a new 32-byte key and store it (table crypto_keys)
 	"""
@@ -150,7 +150,6 @@ def rotateCryptoKey(form):
 		msg = (f"Version bumped to v{cfg['version']}. Update MQTT_RELAY_ENC_KEY_{key_id.upper()} in your environment, then re-encrypt.")
 
 	elif cfg['key_source'].name == "db":
-		# Generate and store a new key row for the same key_id (or use a new key_id strategy)
 		new_key = os.urandom(32)
 		CryptoKey.storage.create(CryptoKey(
 			key_id=key_id, version=cfg['version']+1, key_b64=base64.b64encode(new_key).decode("ascii"),updated_at=datetime.now()

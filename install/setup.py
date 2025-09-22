@@ -3,6 +3,8 @@ from subprocess import Popen, PIPE, STDOUT
 from pathlib import Path
 from uuid import uuid4 
 
+from temod.base.attribute import *
+
 import sys
 import os
 
@@ -10,6 +12,7 @@ if not os.getcwd() in sys.path:
 	sys.path.append(os.getcwd())
 
 from install import common_funcs
+from getpass import getpass
 from core.entity import *
 
 import mysql.connector
@@ -48,11 +51,79 @@ def confirm_database_overwrite():
 	rpsn = input("Continue the installation (y/*) ?").lower()
 	return rpsn == "y"
 
+def get_admin_user():
+	print("\n\nAdmin account setup")
+	email = None
+	while email is None:
+		email = input("Provide the admin email: ")
+		try:
+			email = EmailAttribute("",value=email).value
+		except:
+			print("Wrong email format. Try again")
+			email = None
 
-def install_preset_objects(credentials):	
-	mqtt_relay = MqttRelay(version=APP_VERSION)
-	MysqlEntityStorage(MqttRelay,**credentials).create(mqtt_relay)
-	return True
+	password = None
+	while password is None:
+		password = getpass("Provide the admin password: ")
+		cpassword = getpass("Confirm the admin password: ")
+		if len(password) == 0 or password != cpassword:
+			password = None
+			print("Passwords do not match or are empty. Provide a valid password.")
+	
+	return {"email":email,"password":password}
+
+
+def get_mqtt_broker():
+	print("\n\nMqtt broker setup")
+	"""Ask the user for MQTT configuration values via terminal input."""
+    config = {}
+
+    config["broker_url"] = input("\n\nEnter broker URL [localhost]: ") or "localhost"
+    config["broker_port"] = int(input("Enter broker port [1883]: ") or 1883)
+    config["username"] = input("Enter username (leave empty for none): ")
+    config["password"] = input("Enter password (leave empty for none): ")
+    config["keepalive"] = int(input("Enter keepalive [0]: ") or 0)
+
+    tls_input = input("Enable TLS? (yes/*) [no]: ").strip().lower()
+    config["tls_enabled"] = tls_input in ("yes", "y", "true", "1")
+
+    print("You can later change the settings from config.toml")
+
+    return config
+
+
+def get_crypto_config():
+	print("\n\nCrypto configuration")
+	key_source = None
+	while key_source is None:
+		key_source = input("Where would you like to store the master keys that decode the secrets in your db (0: env, 1: database) [env recommended]: ").strip().lower()
+		if not (key_source in ["1","0","env","db","database"]):
+			print("Invalid choice. Try again")
+			key_source = None
+		else:
+			try:
+				key_source = ["env","db"][int(key_source)]
+			except:
+				key_source = {"database":"db"}.get(key_source,key_source)
+
+	key = None
+	while key is None:
+		key = input("Provide your own master key (base64 encoding of a 32 bits key) or leave empty to generate a random one: ").strip().lower()
+		if key == "":
+			key = base64.b64encode(os.urandom(32))
+		else:
+			try:
+				assert(len(base64.b64decode(key.encode())) == 32)
+			except:
+				key = None
+				print('The specified key has the wrong format')
+
+	if key_source == "env":
+		print("""Since you've chosen env as key source, the master key will be saved into .env at the root of MqttRelay. 
+			If you find this method not secure enough, which it is, remove the key from there and set it in the environment on your own
+		""")
+
+	return {"key_source":key_source, "key":key}
 
 
 def install_mqtttransfer_service(root_path, virtual_env, logging_dir, services_dir):
@@ -82,6 +153,28 @@ def install_mqtttransfer_service(root_path, virtual_env, logging_dir, services_d
 	return True
 
 
+def install_preset_objects(credentials, admin_user, crypto_config):	
+
+	mqtt_relay = MqttRelay(version=APP_VERSION)
+	crypto_config = CryptoConfig(id=1, algorithm="aes-256-gcm",key_source=crypto_config['key_source'],key_id="PRIMARY",iv_bytes=12, tag_bytes=16, encoding="base64", version=1)
+	if crypto_config['key_source'] == "db":
+		MysqlEntityStorage(CryptoKey,**credentials).create(CryptoKey(key_id="PRIMARY",version=1,key_b64=crypto_config['key']))
+	
+	user_storage = MysqlEntityStorage(User,**credentials)
+	privilege_storage = MysqlEntityStorage(Privilege,**credentials)
+
+	admin_privilege = Privilege(privilege_storage.generate_value('id'),label="admin",roles="*")
+	user = User(id=user_storage.generate_value('id'),privilege=admin_privilege['id'],**{k:v for k,v in admin_user.items() if k != "password"})
+	user['password'] = admin_user['password']
+
+	MysqlEntityStorage(MqttRelay,**credentials).create(mqtt_relay)
+	MysqlEntityStorage(CryptoConfig, **credentials).create(crypto_config)
+	privilege_storage.create(admin_privilege)
+	user_storage.create(user)
+
+	return True
+
+
 def setup(app_paths, args):
 
 
@@ -91,6 +184,9 @@ def setup(app_paths, args):
 		return False
 
 	credentials = common_funcs.get_mysql_credentials()
+	admin_user = get_admin_user()
+	mqtt_broker = get_mqtt_broker()
+	crypto_config = get_crypto_config()
 
 	already_created = search_existing_database(credentials)
 	if already_created:
@@ -103,10 +199,15 @@ def setup(app_paths, args):
 			return False
 
 	template_config = common_funcs.load_toml_config(app_paths['template_config_file'])
+	template_config["mqtt"].update(mqtt_broker)
 	template_config['storage']['credentials'].update(credentials)
 	common_funcs.save_toml_config(template_config, app_paths['config_file'])
 
-	return install_preset_objects(credentials)
+	if crypto_config['key_source'] == "env":
+		with open(".env","w") as file:
+			file.write(f"MQTT_RELAY_ENC_KEY_PRIMARY = {crypto_config['key']}")
+
+	return install_preset_objects(credentials, admin_user, crypto_config)
 
 
 if __name__ == "__main__":
@@ -120,7 +221,7 @@ if __name__ == "__main__":
 	)
 	parser.add_argument(
 		'-s', '--services-dir', 
-		help='Directory where WatchTower services files will be stored', 
+		help='Directory where MqttRelay services files will be stored', 
 		default=os.path.join("/","lib","systemd","system")
 	)
 	parser.add_argument('-q', '--quiet', action="store_true", help='No logging', default=False)
