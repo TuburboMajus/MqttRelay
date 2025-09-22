@@ -1,0 +1,78 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Routing Rules - TechDash{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top: 50px;">Routing Rules</h1>
+
+<a href="{{ url_for('routes.newRoutingRule') }}" class="btn btn-secondary">
+  <i class="bi bi-plus"></i> New Rule
+</a>
+
+<table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
+  <thead class="table-dark">
+    <tr>
+      <th>Client</th>
+      <th>Topic</th>
+      <th>Device</th>
+      <th>Parser</th>
+      <th>Priority</th>
+      <th>Status</th>
+      <th>Conditions</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for route in pagination.current %}
+    <tr>
+
+      <!-- If you have joined names available, prefer them; otherwise show IDs -->
+      <td>{{ route.client['name'] or route.client_id }}</td>
+      <td>{{ route.mqtt_topic['topic'] or route.topic_id or '—' }}</td>
+      <td>{% if 'device' in route.entities %} {{route['device']['name']}} {% else %} Any {%endif%}</td>
+      <td>{{ route.parser['name'] or route.parser_id or '—' }}</td>
+
+      <td>
+        <span class="badge bg-light text-dark">{{ route.priority }}</span>
+      </td>
+
+      <td>
+        {% if route.active %}
+          <span class="badge bg-success">Active</span>
+        {% else %}
+          <span class="badge bg-secondary">Inactive</span>
+        {% endif %}
+      </td>
+
+      <!-- Short preview of conditions (mongo_dsl) -->
+      <td class="text-truncate" style="max-width: 24rem;">
+        {% if route.conditions %}
+          <code class="text-muted">{{ route.conditions | tojson | truncate(90, True, '…') }}</code>
+        {% else %}
+          <span class="text-muted">—</span>
+        {% endif %}
+      </td>
+
+      <td>
+        {% if route.created_at %}
+          {{ route.created_at.strftime('%Y-%m-%d') }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+
+      <td>
+        <a href="{{ url_for('routes.viewRoutingRule', routingrule_id=route.id) }}" class="btn btn-sm btn-primary">
+          <i class="bi bi-eye"></i> View
+        </a>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="10" class="text-center text-muted">No routing rules found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

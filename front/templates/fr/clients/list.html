@@ -1,0 +1,43 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Clients - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top: 50px;">Clients</h1>
+
+
+
+<a href="{{ url_for('clients.newClient') }}" class="btn btn-secondary">
+    <i class="bi bi-plus"></i> New Client
+</a>
+
+<table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
+    <thead class="table-dark">
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Joined</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for client in pagination.current %}
+        <tr>
+            <td>{{ client.id }}</td>
+            <td>{{ client['name'] }}</td>
+            <td>{{ client['contact_email'] }}</td>
+            <td>{{ client.created_at.strftime('%Y-%m-%d') }}</td>
+            <td>
+                <a href="{{ url_for('clients.viewClient', client_id=client.id) }}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-eye"></i> View
+                </a>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="5" class="text-center text-muted">No clients found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

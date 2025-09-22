@@ -1,0 +1,611 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Dashboard - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">Operations Dashboard</h1>
+
+<!-- Filters -->
+<div class="d-flex flex-wrap gap-3 align-items-end mb-3">
+  <div>
+    <label class="form-label mb-1">Client</label>
+    <select id="clientFilter" class="form-select">
+      <option value="">All</option>
+      {% if clients %}
+        {% for c in clients %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      {% endif %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label mb-1">Range</label>
+    <select id="rangeSelect" class="form-select">
+      <option value="1h">Last 1h</option>
+      <option value="2h" selected>Last 2h</option>
+      <option value="6h">Last 6h</option>
+      <option value="24h">Last 24h</option>
+      <option value="7d">Last 7d</option>
+      <option value="30d">Last 30d</option>
+    </select>
+  </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs" id="dashboardTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-critical" data-bs-toggle="tab" data-bs-target="#pane-critical" type="button" role="tab">Critical insights</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-ingestion" data-bs-toggle="tab" data-bs-target="#pane-ingestion" type="button" role="tab">Ingestion (MQTT)</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-parsing" data-bs-toggle="tab" data-bs-target="#pane-parsing" type="button" role="tab">Parsing / Extraction</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-quality" data-bs-toggle="tab" data-bs-target="#pane-quality" type="button" role="tab">Quality & Devices</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-metrics" data-bs-toggle="tab" data-bs-target="#pane-metrics" type="button" role="tab">Business Metrics</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-routing" data-bs-toggle="tab" data-bs-target="#pane-routing" type="button" role="tab">Routing & Dispatch</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-capacity" data-bs-toggle="tab" data-bs-target="#pane-capacity" type="button" role="tab">Capacity & Growth</button>
+  </li>
+</ul>
+
+<div class="tab-content pt-3">
+
+  <!-- ===================== -->
+  <!-- Critical (Default)    -->
+  <!-- ===================== -->
+  <div class="tab-pane fade show active" id="pane-critical" role="tabpanel" aria-labelledby="tab-critical" data-default-range="2h">
+    <div class="row g-3">
+      <!-- KPIs -->
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/ingest_rate">
+          <div class="card-body">
+            <div class="text-muted">Ingest rate (msg/min)</div>
+            <div class="display-6 kpi-value">--</div>
+            <div class="small text-muted">last <span class="kpi-range"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/parse_success">
+          <div class="card-body">
+            <div class="text-muted">Parse success</div>
+            <div class="display-6 kpi-value">--%</div>
+            <div class="small text-muted">last <span class="kpi-range"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/dispatch_success">
+          <div class="card-body">
+            <div class="text-muted">Dispatch success</div>
+            <div class="display-6 kpi-value">--%</div>
+            <div class="small text-muted">last <span class="kpi-range"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/processing_backlog">
+          <div class="card-body">
+            <div class="text-muted">Processing backlog</div>
+            <div class="display-6 kpi-value">--</div>
+            <div class="small text-muted">unprocessed msgs</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Ingest throughput</span>
+            <span class="text-muted small">msg/min</span>
+          </div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="line"
+                    data-endpoint="/dashboard/api/critical/throughput_series"
+                    data-title="Ingest throughput">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Dispatch status (stacked)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-stacked="true"
+                    data-endpoint="/dashboard/api/critical/dispatch_series"
+                    data-title="Dispatch status">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Ingestion             -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-ingestion" role="tabpanel" aria-labelledby="tab-ingestion" data-default-range="24h">
+    <div class="row g-3">
+      <div class="col-12 col-xl-8">
+        <div class="card h-100">
+          <div class="card-header">Messages over time (by topic/client)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="260"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/ingest/messages_over_time"
+                    data-title="Messages over time">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-4">
+        <div class="card h-100">
+          <div class="card-header">Top topics (24h)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="260"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/ingest/top_topics"
+                    data-title="Top topics">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">QoS distribution</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="doughnut"
+                    data-endpoint="/api/dashboard/ingest/qos_distribution"
+                    data-title="QoS distribution">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Payload size (histogram)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/ingest/payload_size_hist"
+                    data-title="Payload size">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Parsing               -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-parsing" role="tabpanel" aria-labelledby="tab-parsing" data-default-range="24h">
+    <div class="row g-3">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Parse success vs failure</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-stacked="true"
+                    data-endpoint="/api/dashboard/parse/success_series"
+                    data-title="Parse success vs failure">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Parse latency (p50/p90/p99)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/parse/latency_percentiles"
+                    data-title="Latency">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Extracted points per message</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/parse/extracted_per_message"
+                    data-title="Extracted per message">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Parser versions share</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/parse/parser_versions"
+                    data-title="Parser versions">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Quality & Devices     -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-quality" role="tabpanel" aria-labelledby="tab-quality" data-default-range="24h">
+    <div class="row g-3">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Latest value age by device (min)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="240"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/quality/latest_age_by_device"
+                    data-title="Latest value age">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+            <div class="text-muted small mt-2">Highlights stale/offline devices (higher is worse).</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Quality mix (good / suspect / bad)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="240"
+                    data-type="bar"
+                    data-stacked="true"
+                    data-endpoint="/api/dashboard/quality/mix_over_time"
+                    data-title="Quality mix">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Business Metrics      -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-metrics" role="tabpanel" aria-labelledby="tab-metrics" data-default-range="24h">
+    <div class="d-flex gap-2 align-items-end mb-2">
+      <div>
+        <label class="form-label mb-1">Metric</label>
+        <select id="metricSelect" class="form-select">
+          <option value="soil_moisture">Soil moisture</option>
+          <option value="temperature">Temperature</option>
+          <option value="battery">Battery</option>
+          <!-- Add more or populate from backend -->
+        </select>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-12">
+        <div class="card h-100">
+          <div class="card-header">Metric trends</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="260"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/metrics/trends"
+                    data-title="Metric trends"
+                    data-extra="metric:#metricSelect">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Top metrics by volume</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/metrics/top_by_volume"
+                    data-title="Top metrics by volume">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Per-client metric volume</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/metrics/per_client_volume"
+                    data-title="Per-client metric volume">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Routing & Dispatch    -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-routing" role="tabpanel" aria-labelledby="tab-routing" data-default-range="24h">
+    <div class="row g-3">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Rule hits (top)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/routing/rule_hits"
+                    data-title="Rule hits">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Destination failure rate</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/dispatch/destination_fail_rate"
+                    data-title="Destination failure rate">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="card h-100">
+          <div class="card-header">Retries backlog & age</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="240"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/dispatch/retries_series"
+                    data-title="Retries backlog">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Capacity & Growth     -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-capacity" role="tabpanel" aria-labelledby="tab-capacity" data-default-range="30d">
+    <div class="row g-3">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Storage growth (rows/day)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="240"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/capacity/storage_growth"
+                    data-title="Storage growth">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Table hot spots</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="240"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/capacity/table_rows"
+                    data-title="Table hot spots">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-L3S8v8O9Z9C2h5a2k1m7V0c4Yl0y9c9hCqXlJwQf4e7YwV0J7Cq5i7zjQxU5tq0m" crossorigin="anonymous"></script>
+
+<script>
+(function(){
+  const charts = {}; // canvasId -> Chart instance
+
+  function buildUrl(endpoint, params) {
+    const url = new URL(endpoint, window.location.origin);
+    Object.entries(params || {}).forEach(([k,v]) => {
+      if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
+    });
+    return url.toString();
+  }
+
+  function getActiveClientId() {
+    const sel = document.getElementById('clientFilter');
+    return sel ? sel.value : '';
+  }
+
+  function getRangeFor(tabPane) {
+    const globalRange = document.getElementById('rangeSelect')?.value || '';
+    const tabDefault = tabPane.getAttribute('data-default-range') || '';
+    return globalRange || tabDefault || '';
+  }
+
+  async function fetchJSON(url) {
+    const r = await fetch(url, {headers: {'Accept':'application/json'}});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  }
+
+  function parseExtraParams(canvas) {
+    // data-extra format: "param:#selector,other:#sel2"
+    const extra = canvas.getAttribute('data-extra');
+    const out = {};
+    if (!extra) return out;
+    extra.split(',').forEach(pair => {
+      const [k, sel] = pair.split(':');
+      const el = document.querySelector(sel);
+      if (k && el) out[k] = el.value;
+    });
+    return out;
+  }
+
+  function showSpinner(container, show) {
+    const sp = container.querySelector('.chart-spinner');
+    if (sp) sp.style.display = show ? 'inline-block' : 'none';
+  }
+
+  function showError(container, msg) {
+    const e = container.querySelector('.chart-error');
+    if (e) { e.style.display = 'block'; e.textContent = msg; }
+  }
+
+  function hideError(container) {
+    const e = container.querySelector('.chart-error');
+    if (e) e.style.display = 'none';
+  }
+
+  function destroyChart(canvas) {
+    const id = canvas.id || (canvas.id = `cv_${Math.random().toString(36).slice(2)}`);
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  }
+
+  async function loadChart(canvas, tabPane) {
+    const container = canvas.closest('.card-body') || canvas.parentElement;
+    hideError(container);
+    showSpinner(container, true);
+    try {
+      const endpoint = canvas.getAttribute('data-endpoint');
+      const type = canvas.getAttribute('data-type') || 'line';
+      const stacked = canvas.getAttribute('data-stacked') === 'true';
+      const title = canvas.getAttribute('data-title') || '';
+      const params = {
+        client: getActiveClientId(),
+        range: getRangeFor(tabPane),
+        ...parseExtraParams(canvas)
+      };
+      const url = buildUrl(endpoint, params);
+      const payload = await fetchJSON(url);
+
+      // Expect payload as {labels:[], datasets:[...]} or full Chart.js data/options.
+      const data = payload.data || { labels: payload.labels || [], datasets: payload.datasets || [] };
+      const options = Object.assign({
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: stacked ? {
+          x: { stacked: true },
+          y: { stacked: true, beginAtZero: true }
+        } : { y: { beginAtZero: true } },
+        plugins: {
+          title: { display: !!title, text: title },
+          legend: { position: 'bottom' }
+        }
+      }, payload.options || {});
+
+      destroyChart(canvas);
+      const ctx = canvas.getContext('2d');
+      const chart = new Chart(ctx, { type, data, options });
+      charts[canvas.id] = chart;
+    } catch (err) {
+      showError(container, err.message || 'Failed to load chart');
+    } finally {
+      showSpinner(container, false);
+    }
+  }
+
+  async function loadKpis(tabPane) {
+    const kpis = tabPane.querySelectorAll('.kpi');
+    const rangeText = getRangeFor(tabPane);
+    kpis.forEach(async card => {
+      try {
+        const endpoint = card.getAttribute('data-endpoint');
+        const url = buildUrl(endpoint, { client: getActiveClientId(), range: rangeText });
+        const data = await fetchJSON(url); // expect {value: number|string}
+        card.querySelector('.kpi-value').textContent = (data && data.value !== undefined) ? data.value : '--';
+        const kr = card.querySelector('.kpi-range'); if (kr) kr.textContent = rangeText;
+      } catch (e) {
+        card.querySelector('.kpi-value').textContent = '—';
+      }
+    });
+  }
+
+  function loadChartsIn(tabPane) {
+    loadKpis(tabPane);
+    const canvases = tabPane.querySelectorAll('canvas.chart-remote');
+    canvases.forEach(cv => loadChart(cv, tabPane));
+  }
+
+  // Tab events: lazy load & refresh on show
+  document.getElementById('dashboardTabs').addEventListener('shown.bs.tab', (ev) => {
+    const paneId = ev.target.getAttribute('data-bs-target');
+    const pane = document.querySelector(paneId);
+    if (pane) loadChartsIn(pane);
+  });
+
+  // Filters trigger reload for active tab
+  ['clientFilter','rangeSelect','metricSelect'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => {
+      const activePane = document.querySelector('.tab-pane.active.show');
+      if (activePane) loadChartsIn(activePane);
+    });
+  });
+
+  // Initial load: first (critical) tab only
+  document.addEventListener('DOMContentLoaded', () => {
+    const firstPane = document.getElementById('pane-critical');
+    if (firstPane) loadChartsIn(firstPane);
+  });
+})();
+</script>
+{% endblock %}

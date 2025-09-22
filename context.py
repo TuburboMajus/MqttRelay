@@ -1,7 +1,12 @@
 from temod.ext.holders import clusters, joins, entities
 from temod_flask.ext import _readers_holder as _FormReaders
+from temod.storage.directory import DirectoryStorage
 
 import random
+import os
+
+
+PARSERS_DB = DirectoryStorage(os.path.join(os.path.dirname(os.path.realpath(__file__)),"db"),createDir=True).subStorage("parsers",createDir=True,mode="")
 
 
 def init_context(config):

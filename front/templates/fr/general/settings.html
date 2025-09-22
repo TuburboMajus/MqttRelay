@@ -1,0 +1,740 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Settings - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">Settings</h1>
+
+<div id="alertContainer"></div>
+
+<ul class="nav nav-tabs" id="settingsTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="user-tab" data-bs-toggle="tab" data-bs-target="#userPane" type="button" role="tab">
+      <i class="bi bi-person-gear"></i> User
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#systemPane" type="button" role="tab">
+      <i class="bi bi-gear"></i> System
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#securityPane" type="button" role="tab">
+      <i class="bi bi-shield-check"></i> Security
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content pt-3">
+  <!-- User tab -->
+  <div class="tab-pane fade show active" id="userPane" role="tabpanel" aria-labelledby="user-tab">
+    <div class="row g-4">
+      <!-- Profile -->
+      <div class="col-lg-6">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-primary text-white">
+            Profile
+          </div>
+          <div class="card-body">
+            <form id="userProfileForm" class="needs-validation" novalidate>
+              {% if csrf_token is defined %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="form-label">User ID</label>
+                  <input class="form-control" value="{{ user.id }}" readonly>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Privilege</label>
+                  <input class="form-control" value="{{ user.privilege }}" readonly>
+                </div>
+                <div class="col-md-6">
+                  <label for="email" class="form-label">Email</label>
+                  <input id="email" name="email" type="email" class="form-control" value="{{ user.email }}" required>
+                  <div class="invalid-feedback">Please provide a valid email.</div>
+                </div>
+                <!-- Confirm email (appears only if email changes) -->
+                <div class="col-md-6 d-none" id="confirmEmailGroup">
+                  <label for="email_confirm" class="form-label">Confirm Email</label>
+                  <input id="email_confirm" type="email" class="form-control" autocomplete="off">
+                  <div class="invalid-feedback">Emails must match.</div>
+                </div>
+                <div class="col-md-6">
+                  <label for="language" class="form-label">Language</label>
+                  <select id="language" name="language" class="form-select">
+                    {% set langs = ['en','fr','ar','es','de','it'] %}
+                    {% for lang in langs %}
+                    <option value="{{ lang }}" {{ lang == (user.language or 'en') and 'selected' or '' }}>{{ lang|upper }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-6 d-flex align-items-end">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="track" name="track" {{ user.track and 'checked' or '' }}>
+                    <label class="form-check-label" for="track">Allow analytics tracking</label>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-3 d-flex gap-2">
+                <button id="saveProfileBtn" type="submit" class="btn btn-primary">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Save Profile
+                </button>
+                <button type="reset" class="btn btn-outline-secondary">Reset</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Change password -->
+      <div class="col-lg-6">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-info text-white">
+            Change Password
+          </div>
+          <div class="card-body">
+            <form id="passwordForm" class="needs-validation" novalidate>
+              {% if csrf_token is defined %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+              <div class="mb-3">
+                <label for="current_password" class="form-label">Current Password</label>
+                <input id="current_password" name="current_password" type="password" class="form-control" required>
+                <div class="invalid-feedback">Current password is required.</div>
+              </div>
+              <div class="mb-3">
+                <label for="new_password" class="form-label">New Password</label>
+                <input id="new_password" name="new_password" type="password" class="form-control" minlength="8" required
+                       aria-describedby="pwHelp">
+                <div id="pwHelp" class="form-text">Minimum 8 characters.</div>
+                <div class="invalid-feedback">New password must be at least 8 characters.</div>
+              </div>
+              <div class="mb-3">
+                <label for="confirm_password" class="form-label">Confirm New Password</label>
+                <input id="confirm_password" name="confirm_password" type="password" class="form-control" required>
+                <div class="invalid-feedback">Passwords must match.</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button id="savePasswordBtn" type="submit" class="btn btn-info text-white">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Update Password
+                </button>
+                <button type="reset" class="btn btn-outline-secondary">Reset</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <div class="tab-pane fade" id="systemPane" role="tabpanel" aria-labelledby="system-tab">
+    <div class="row g-4">
+      <!-- Secrets & Encryption -->
+      <div class="col-12">
+       <!-- Metric Catalog -->
+      <div class="col-12">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <span>Metric Catalog</span>
+            <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#addMetricModal">
+              <i class="bi bi-plus-circle"></i> Add Metric
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="row mb-3">
+              <div class="col-sm-6">
+                <input id="metricSearch" class="form-control" placeholder="Search by key name, unit or description…">
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle" id="metricsTable">
+                <thead class="table-dark">
+                  <tr>
+                    <th style="width: 90px;">ID</th>
+                    <th>Key</th>
+                    <th>Default Unit</th>
+                    <th>DigUpAgri Ref</th>
+                    <th>Description</th>
+                    <th class="text-end" style="width: 100px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {% for m in metrics %}
+                  <tr id="metric-row-{{ m.id }}">
+                    <td>#{{ m.id }}</td>
+                    <td class="m-key"><code>{{ m.key_name }}</code></td>
+                    <td class="m-unit">{{ m.default_unit or '-' }}</td>
+                    <td class="m-ref">{{ m.digiupagri_ref or '-' }}</td>
+                    <td class="m-desc text-muted">{{ m.description or '—' }}</td>
+                    <td class="text-end">
+                      <button class="btn btn-sm btn-outline-danger delete-metric-btn"
+                              data-metric-id="{{ m.id }}"
+                              data-delete-url="{{ url_for('metrics.deleteMetric', metric_id=m.id) }}"
+                              title="Delete metric">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="6" class="text-center text-muted">No metrics yet.</td></tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <!-- System tab -->
+  <div class="tab-pane fade" id="securityPane" role="tabpanel" aria-labelledby="security-tab">
+    <div class="row g-4">
+      <!-- Secrets & Encryption -->
+      <div class="col-12">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-warning d-flex justify-content-between align-items-center">
+            <span class="fw-semibold"><i class="bi bi-shield-lock me-1"></i> Secrets &amp; Encryption (Reversible)</span>
+            <small class="text-dark">Controls how service/database passwords are stored</small>
+          </div>
+          <div class="card-body">
+            <form id="cryptoForm" class="row g-3">
+              {% if csrf_token is defined %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+
+              <div class="col-md-4">
+                <label for="crypto_algorithm" class="form-label">Algorithm</label>
+                <select id="crypto_algorithm" class="form-select">
+                  <option value="aes-256-gcm">AES-256-GCM (recommended)</option>
+                  <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
+                  <option value="aes-256-cbc-hmac">AES-256-CBC + HMAC-SHA256</option>
+                </select>
+                <div class="form-text">Authenticated encryption for confidentiality &amp; integrity.</div>
+              </div>
+
+              <div class="col-md-4">
+                <label for="crypto_key_source" class="form-label">Key Source</label>
+                <select id="crypto_key_source" class="form-select">
+                  <option value="env">Environment variable</option>
+                  <option value="kms">External KMS / HSM</option>
+                  <option value="db">Database (discouraged)</option>
+                </select>
+                <div class="form-text">Where the encryption key is retrieved at runtime.</div>
+              </div>
+
+              <div class="col-md-4">
+                <label for="crypto_key_id" class="form-label">Key Alias / ID</label>
+                <input id="crypto_key_id" class="form-control" placeholder="e.g., PRIMARY" maxlength="128">
+                <div class="form-text">A stable identifier for the active key (not the key value).</div>
+              </div>
+
+              <div class="col-md-3">
+                <label for="crypto_iv_bytes" class="form-label">IV/Nonce Bytes</label>
+                <input id="crypto_iv_bytes" type="number" class="form-control" min="8" max="32" step="1" value="12">
+                <div class="form-text">12 recommended for GCM/Poly1305.</div>
+              </div>
+
+              <div class="col-md-3">
+                <label for="crypto_tag_bytes" class="form-label">Tag Bytes</label>
+                <input id="crypto_tag_bytes" type="number" class="form-control" min="12" max="16" step="1" value="16">
+                <div class="form-text">Authentication tag length (GCM/Poly1305).</div>
+              </div>
+
+              <div class="col-md-3">
+                <label for="crypto_encoding" class="form-label">Ciphertext Encoding</label>
+                <select id="crypto_encoding" class="form-select">
+                  <option value="base64">Base64</option>
+                  <option value="hex">Hex</option>
+                </select>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <div id="crypto_status" class="form-control-plaintext text-muted">Loading…</div>
+              </div>
+
+              <div class="col-12">
+                <div class="alert alert-warning d-flex align-items-start" role="alert">
+                  <i class="bi bi-exclamation-triangle me-2"></i>
+                  <div>
+                    Reversible encryption protects at rest, but anyone with DB access <em>and</em> key access can decrypt.
+                    Prefer storing keys outside the DB (Env or KMS). Rotating keys will allow re-encryption in place.
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12">
+                <label for="crypto_test_plain" class="form-label">Test Encrypt/Decrypt</label>
+                <div class="row g-2">
+                  <div class="col-md-4">
+                    <input id="crypto_test_plain" class="form-control" placeholder="Plaintext (e.g., mySecretPw)">
+                  </div>
+                  <div class="col-md-8">
+                    <input id="crypto_test_cipher" class="form-control" placeholder="Ciphertext result" readonly>
+                  </div>
+                </div>
+                <div class="mt-2 small">
+                  <span class="me-2">Decrypted:</span>
+                  <code id="crypto_test_decrypted">—</code>
+                </div>
+              </div>
+
+              <div class="col-12 d-flex flex-wrap gap-2 mt-2">
+                <button id="cryptoSaveBtn" type="button" class="btn btn-primary">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Save Encryption Config
+                </button>
+                <button id="cryptoTestBtn" type="button" class="btn btn-outline-secondary">
+                  Test Encrypt/Decrypt
+                </button>
+                <button id="cryptoRotateBtn" type="button" class="btn btn-outline-warning">
+                  Rotate Key (new version)
+                </button>
+                <button id="cryptoReencryptBtn" type="button" class="btn btn-outline-danger">
+                  Re-encrypt Existing Passwords
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- Add Metric Modal -->
+<div class="modal fade" id="addMetricModal" tabindex="-1" aria-labelledby="addMetricLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" id="addMetricForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addMetricLabel">Add Metric</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <div class="mb-3">
+          <label for="key_name" class="form-label">Key Name <span class="text-danger">*</span></label>
+          <input id="key_name" name="key_name" class="form-control" required maxlength="128"
+                 pattern="^[A-Za-z0-9_]+$" placeholder="e.g., soil_moisture">
+          <div class="form-text">Letters, numbers, and underscores only.</div>
+          <div class="invalid-feedback">Key must be alphanumeric/underscore only.</div>
+        </div>
+        <div class="mb-3">
+          <label for="default_unit" class="form-label">Default Unit</label>
+          <input id="default_unit" name="default_unit" class="form-control" maxlength="32" placeholder="e.g., %">
+        </div>
+        <div class="mb-3">
+          <label for="digiupagri_ref" class="form-label">DigUpAgri Ref (3 chars)</label>
+          <input id="digiupagri_ref" name="digiupagri_ref" class="form-control" maxlength="3" placeholder="e.g., HUM">
+          <div class="form-text">Optional. If provided, must be 3 letters/numbers.</div>
+        </div>
+        <div class="mb-3">
+          <label for="description_metric" class="form-label">Description</label>
+          <textarea id="description_metric" name="description" class="form-control" rows="3" maxlength="512"
+                    placeholder="What does this metric represent?"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="saveMetricBtn" type="submit" class="btn btn-success">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Add Metric
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// ---------- Helpers ----------
+function showAlert(message, variant='success') {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = `
+    <div class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>`;
+}
+(function initCommonHeaders(){
+  const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+  const metaVal = metaCsrf ? metaCsrf.getAttribute('content') : "";
+  const jinjaVal = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  const csrfToken = metaVal || jinjaVal || "";
+  window._commonHeaders = { 'Content-Type': 'application/json' };
+  if (csrfToken) window._commonHeaders['X-CSRFToken'] = csrfToken;
+})();
+
+// ---------- USER: Email confirm logic ----------
+(() => {
+  const initialEmail = "{{ user.email }}";
+  const emailEl = document.getElementById('email');
+  const group = document.getElementById('confirmEmailGroup');
+  const emailConfirmEl = document.getElementById('email_confirm');
+
+  function needConfirm() {
+    return emailEl.value.trim() !== initialEmail.trim();
+  }
+  function updateConfirmVisibility() {
+    const show = needConfirm();
+    group.classList.toggle('d-none', !show);
+    emailConfirmEl.required = show;
+    if (!show) {
+      emailConfirmEl.value = '';
+      emailConfirmEl.setCustomValidity('');
+      emailConfirmEl.classList.remove('is-invalid');
+    }
+  }
+  function validateMatch() {
+    if (!needConfirm()) return;
+    const match = emailConfirmEl.value.trim() === emailEl.value.trim();
+    emailConfirmEl.setCustomValidity(match ? '' : 'Emails do not match');
+    emailConfirmEl.classList.toggle('is-invalid', !match);
+  }
+
+  emailEl.addEventListener('input', () => { updateConfirmVisibility(); validateMatch(); });
+  emailConfirmEl.addEventListener('input', validateMatch);
+  updateConfirmVisibility();
+})();
+
+// ---------- USER: Save profile ----------
+document.getElementById('userProfileForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('saveProfileBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  // enforce confirm match if visible
+  const confirmGroup = document.getElementById('confirmEmailGroup');
+  const emailEl = document.getElementById('email');
+  const emailConfirmEl = document.getElementById('email_confirm');
+  if (!confirmGroup.classList.contains('d-none')) {
+    if (emailEl.value.trim() !== emailConfirmEl.value.trim()) {
+      emailConfirmEl.setCustomValidity('Emails do not match');
+      emailConfirmEl.classList.add('is-invalid');
+    } else {
+      emailConfirmEl.setCustomValidity('');
+      emailConfirmEl.classList.remove('is-invalid');
+    }
+  }
+
+  if (!form.checkValidity()) {
+    form.classList.add('was-validated');
+    return;
+  }
+
+  btn.disabled = true; spinner.classList.remove('d-none');
+
+  const payload = {
+    email: emailEl.value.trim(),
+    language: document.getElementById('language').value,
+    track: !!document.getElementById('track').checked
+  };
+
+  try {
+    const res = await fetch("{{ url_for('users.editUser', user_id=user['id']) }}", {
+      method: 'PUT',
+      headers: window._commonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    // After success, treat new email as baseline so confirm hides again
+    (function resetConfirmBaseline(){
+      const emailNow = payload.email;
+      const group = document.getElementById('confirmEmailGroup');
+      const emailConfirmEl = document.getElementById('email_confirm');
+      group.classList.add('d-none');
+      emailConfirmEl.required = false;
+      emailConfirmEl.value = '';
+      emailConfirmEl.setCustomValidity('');
+      emailConfirmEl.classList.remove('is-invalid');
+    })();
+
+    showAlert('Profile updated successfully.');
+  } catch (err) {
+    showAlert('Failed to update profile: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- USER: Change password ----------
+document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('savePasswordBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  const current = document.getElementById('current_password').value;
+  const next = document.getElementById('new_password').value;
+  const confirm = document.getElementById('confirm_password').value;
+
+  let valid = true;
+  if (next.length < 8) valid = false;
+  if (next !== confirm) valid = false;
+  if (!current) valid = false;
+
+  if (!valid || !form.checkValidity()) {
+    form.classList.add('was-validated');
+    return;
+  }
+
+  btn.disabled = true; spinner.classList.remove('d-none');
+  try {
+    const res = await fetch("{{ url_for('users.changePassword', user_id=user['id']) }}", {
+      method: 'PUT',
+      headers: window._commonHeaders,
+      body: JSON.stringify({ current_password: current, new_password: next })
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    form.reset();
+    form.classList.remove('was-validated');
+    showAlert('Password updated successfully.');
+  } catch (err) {
+    showAlert('Failed to update password: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- SYSTEM: Search filter ----------
+document.getElementById('metricSearch').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#metricsTable tbody tr').forEach(tr => {
+    const key = tr.querySelector('.m-key')?.innerText.toLowerCase() || '';
+    const unit = tr.querySelector('.m-unit')?.innerText.toLowerCase() || '';
+    const ref  = tr.querySelector('.m-ref')?.innerText.toLowerCase() || '';
+    const desc = tr.querySelector('.m-desc')?.innerText.toLowerCase() || '';
+    tr.style.display = (key.includes(q) || unit.includes(q) || desc.includes(q) || ref.includes(q)) ? '' : 'none';
+  });
+});
+
+// ---------- SYSTEM: Secrets & Encryption ----------
+async function loadCryptoConfig() {
+  const status = document.getElementById('crypto_status');
+  try {
+    const res = await fetch("{{ url_for('general.getCrypto', json=True) }}", { headers: window._commonHeaders });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    const cfg = data.config || data || {};
+    document.getElementById('crypto_algorithm').value = (cfg.algorithm || 'aes-256-gcm').toLowerCase();
+    document.getElementById('crypto_key_source').value = (cfg.key_source || 'env').toLowerCase();
+    document.getElementById('crypto_key_id').value = cfg.key_id || 'PRIMARY';
+    document.getElementById('crypto_iv_bytes').value = cfg.iv_bytes ?? 12;
+    document.getElementById('crypto_tag_bytes').value = cfg.tag_bytes ?? 16;
+    document.getElementById('crypto_encoding').value = (cfg.encoding || 'base64').toLowerCase();
+
+    status.textContent = `Active: ${cfg.algorithm || 'AES-256-GCM'} • Key: ${cfg.key_id || 'PRIMARY'}${cfg.version ? ' • v'+cfg.version : ''}`;
+  } catch (err) {
+    status.textContent = 'Failed to load config';
+    showAlert('Failed to load encryption config: ' + err.message, 'danger');
+  }
+}
+loadCryptoConfig();
+
+document.getElementById('cryptoSaveBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('cryptoSaveBtn');
+  const spin = btn.querySelector('.spinner-border');
+  btn.disabled = true; spin.classList.remove('d-none');
+
+  const payload = {
+    algorithm: document.getElementById('crypto_algorithm').value,
+    key_source: document.getElementById('crypto_key_source').value,
+    key_id: document.getElementById('crypto_key_id').value.trim() || 'PRIMARY',
+    iv_bytes: parseInt(document.getElementById('crypto_iv_bytes').value, 10),
+    tag_bytes: parseInt(document.getElementById('crypto_tag_bytes').value, 10),
+    encoding: document.getElementById('crypto_encoding').value
+  };
+
+  try {
+    const res = await fetch("{{ url_for('general.updateCrypto') }}", {
+      method: 'PUT',
+      headers: window._commonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    showAlert('Encryption configuration saved.');
+    loadCryptoConfig();
+  } catch (err) {
+    showAlert('Failed to save encryption config: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spin.classList.add('d-none');
+  }
+});
+
+document.getElementById('cryptoTestBtn').addEventListener('click', async () => {
+  const plain = document.getElementById('crypto_test_plain').value;
+  const outC = document.getElementById('crypto_test_cipher');
+  const outP = document.getElementById('crypto_test_decrypted');
+  outC.value = '…'; outP.textContent = '…';
+  try {
+    const res = await fetch("{{ url_for('general.testCrypto') }}", {
+      method: 'POST',
+      headers: window._commonHeaders,
+      body: JSON.stringify({ plaintext: plain })
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    outC.value = data.ciphertext || '';
+    outP.textContent = (data.decrypted !== undefined) ? String(data.decrypted) : '—';
+    showAlert('Test completed.');
+  } catch (err) {
+    outC.value = ''; outP.textContent = '—';
+    showAlert('Test failed: ' + err.message, 'danger');
+  }
+});
+
+document.getElementById('cryptoRotateBtn').addEventListener('click', async () => {
+  if (!confirm('Rotate the encryption key? You may need to re-encrypt existing secrets.')) return;
+  try {
+    const res = await fetch("{{ url_for('general.rotateCryptoKey') }}", {
+      method: 'POST',
+      headers: window._commonHeaders,
+      body: JSON.stringify({ key_id: document.getElementById('crypto_key_id').value.trim() || 'PRIMARY' })
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    showAlert('Key rotation initiated.');
+    loadCryptoConfig();
+  } catch (err) {
+    showAlert('Key rotation failed: ' + err.message, 'danger');
+  }
+});
+
+document.getElementById('cryptoReencryptBtn').addEventListener('click', async () => {
+  if (!confirm('Re-encrypt all stored passwords with the active key/algorithm? This may take time.')) return;
+  try {
+    const res = await fetch("{{ url_for('general.reCrypto') }}", {
+      method: 'POST',
+      headers: window._commonHeaders
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    const count = data.updated_count ?? data.count ?? 'All';
+    showAlert(`Re-encryption completed. Updated ${count} secrets.`);
+  } catch (err) {
+    showAlert('Re-encryption failed: ' + err.message, 'danger');
+  }
+});
+
+// ---------- SYSTEM: Add metric ----------
+document.getElementById('addMetricForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('saveMetricBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  const key = document.getElementById('key_name');
+  const ref = document.getElementById('digiupagri_ref');
+
+  const refVal = ref.value.trim();
+  if (refVal && !/^[A-Za-z0-9]{3}$/.test(refVal)) {
+    ref.classList.add('is-invalid');
+    return;
+  } else {
+    ref.classList.remove('is-invalid');
+  }
+
+  if (!form.checkValidity()) {
+    form.classList.add('was-validated');
+    return;
+  }
+
+  btn.disabled = true; spinner.classList.remove('d-none');
+
+  const payload = {
+    key_name: key.value.trim(),
+    default_unit: document.getElementById('default_unit').value.trim() || null,
+    digiupagri_ref: refVal || null,
+    description: document.getElementById('description_metric').value || null
+  };
+
+  try {
+    const res = await fetch("{{ url_for('metrics.createMetric') }}", {
+      method: 'POST',
+      headers: window._commonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    const metric = data.metric || payload;
+    if (!metric.id) metric.id = "~";
+
+    const rowHTML = `
+      <tr id="metric-row-${metric.id}">
+        <td>#${metric.id}</td>
+        <td class="m-key"><code>${metric.key_name}</code></td>
+        <td class="m-unit">${metric.default_unit || '-'}</td>
+        <td class="m-ref">${metric.digiupagri_ref || '-'}</td>
+        <td class="m-desc text-muted">${metric.description || '—'}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-danger delete-metric-btn"
+                  data-metric-id="${metric.id}"
+                  data-delete-url="{{ url_for('metrics.deleteMetric', metric_id=0) }}".replace('metric_id=0','metric_id=${metric.id}')>
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>`;
+    const tbody = document.querySelector('#metricsTable tbody');
+    if (tbody.querySelector('.text-center')) tbody.innerHTML = '';
+    tbody.insertAdjacentHTML('afterbegin', rowHTML);
+
+    bindMetricDeleteHandlers(tbody);
+
+    (bootstrap.Modal.getInstance(document.getElementById('addMetricModal')) || new bootstrap.Modal(document.getElementById('addMetricModal'))).hide();
+    form.reset(); form.classList.remove('was-validated');
+    showAlert('Metric added successfully.');
+  } catch (err) {
+    showAlert('Failed to add metric: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- SYSTEM: Delete metric ----------
+function bindMetricDeleteHandlers(root=document) {
+  root.querySelectorAll('.delete-metric-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-metric-id');
+      const url = btn.getAttribute('data-delete-url');
+      if (!confirm(`Delete metric #${id}? This cannot be undone.`)) return;
+
+      btn.disabled = true;
+      try {
+        const res = await fetch(url, { method: 'DELETE', headers: window._commonHeaders });
+        const data = await res.json().catch(()=> ({}));
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+        const row = document.getElementById(`metric-row-${id}`);
+        row?.parentNode?.removeChild(row);
+
+        const tbody = document.querySelector('#metricsTable tbody');
+        if (!tbody.querySelector('tr')) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No metrics yet.</td></tr>`;
+        }
+        showAlert(`Metric #${id} deleted.`);
+      } catch (err) {
+        showAlert('Failed to delete metric: ' + err.message, 'danger');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
+}
+bindMetricDeleteHandlers(document);
+</script>
+{% endblock %}

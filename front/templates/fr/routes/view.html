@@ -1,0 +1,590 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Routing Rule #{{ rule.id }} - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">
+  Routing Rule <small class="text-muted">#{{ rule.id }}</small>
+</h1>
+
+<div id="alertContainer"></div>
+
+<a href="{{ url_for('routes.listRoutingRules') }}" class="btn btn-outline-secondary mb-3">
+  <i class="bi bi-arrow-left"></i> Back to Rules
+</a>
+
+<ul class="nav nav-tabs" id="routeTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="details-tab" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab" aria-controls="tab-details" aria-selected="true">
+      Details
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="graph-tab" data-bs-toggle="tab" data-bs-target="#tab-graph" type="button" role="tab" aria-controls="tab-graph" aria-selected="false">
+      Graph
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content mt-3" id="routeTabsContent">
+  <!-- ===== TAB: DETAILS ===== -->
+  <div class="tab-pane fade show active" id="tab-details" role="tabpanel" aria-labelledby="details-tab">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <span>Routing Rule</span>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#editRouteModal">
+            <i class="bi bi-pencil"></i> Edit
+          </button>
+          <button id="deleteRuleBtn" class="btn btn-sm btn-danger">
+            <i class="bi bi-trash"></i> Delete
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <p class="mb-1"><strong>ID:</strong> <span id="v_id">{{ rule.id }}</span></p>
+            <p class="mb-1">
+              <strong>Status:</strong>
+              {% if rule.active %}
+                <span id="v_active" class="badge bg-success">Active</span>
+              {% else %}
+                <span id="v_active" class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </p>
+            <p class="mb-1"><strong>Priority:</strong> <span id="v_priority">{{ rule.priority }}</span></p>
+            <p class="mb-1"><strong>Created:</strong> <span id="v_created">{{ rule.created_at.strftime('%Y-%m-%d') if rule.created_at else '—' }}</span></p>
+          </div>
+
+          <div class="col-md-8">
+            <div class="row">
+              <div class="col-md-6">
+                <p class="mb-1"><strong>Client:</strong> <span id="v_client">{{ rule.client_name or rule.client_id }}</span></p>
+                <p class="mb-1"><strong>Topic:</strong> <span id="v_topic">{{ rule.topic_string or rule.topic_id or '—' }}</span></p>
+              </div>
+              <div class="col-md-6">
+                <p class="mb-1"><strong>Device:</strong> <span id="v_device">{{ rule.device_label or rule.device_id or '—' }}</span></p>
+                <p class="mb-1"><strong>Parser:</strong> <span id="v_parser">{{ rule.parser_name or rule.parser_id or '—' }}</span></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- JSON: parser_config -->
+          <div class="col-12 mt-2">
+            <div class="d-flex justify-content-between align-items-center">
+              <strong class="mb-2">Parser Config (JSON)</strong>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="copyParserConfigBtn">
+                <i class="bi bi-clipboard"></i> Copy
+              </button>
+            </div>
+            <pre id="v_parser_config" class="bg-light p-3 rounded small mb-0" style="max-height: 300px; overflow:auto;">{{ rule.parser_config|tojson(indent=2) if rule.parser_config else '—' }}</pre>
+          </div>
+
+          <!-- JSON: conditions -->
+          <div class="col-12 mt-4">
+            <div class="d-flex justify-content-between align-items-center">
+              <strong class="mb-2">Conditions (mongo_dsl JSON)</strong>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="copyConditionsBtn">
+                <i class="bi bi-clipboard"></i> Copy
+              </button>
+            </div>
+            <pre id="v_conditions" class="bg-light p-3 rounded small mb-0" style="max-height: 300px; overflow:auto;">{{ rule.conditions|tojson(indent=2) if rule.conditions else '—' }}</pre>
+          </div>
+
+          <!-- Destinations -->
+          <div class="col-12 mt-4">
+            <strong class="mb-2 d-block">Destinations</strong>
+            {% if destinations and destinations|length > 0 %}
+              <ul id="v_destinations" class="list-group">
+                {% for d in destinations %}
+                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>
+                      <span class="badge bg-secondary me-2">{{ d.type.name|upper }}</span>
+                      {{ d.client_destination.to_dict() or d.id }}
+                    </span>
+                    <span class="text-muted small">#{{ d.id }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div id="v_destinations_empty" class="text-muted">—</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB: GRAPH (placeholder) ===== -->
+  <div class="tab-pane fade" id="tab-graph" role="tabpanel" aria-labelledby="graph-tab">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-primary text-white">
+        Route Graph
+      </div>
+      <div class="card-body">
+        <!-- Intentionally left blank; populate later -->
+        <div id="routeGraph" style="min-height: 360px;" class="text-muted d-flex align-items-center justify-content-center">
+          (Graph will be displayed here)
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= Edit Rule Modal ================= -->
+<div class="modal fade" id="editRouteModal" tabindex="-1" aria-labelledby="editRouteLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <form class="modal-content" id="editRouteForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editRouteLabel">Edit Routing Rule</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="row g-3">
+          <!-- CLIENT (required) -->
+          <div class="col-md-6">
+            <label for="e_client_select" class="form-label">Client</label>
+            <select id="e_client_select" class="form-select" required>
+              {% if rule.client_id and (rule.client_name or '') %}
+                <option value="{{ rule.client_id }}" selected>{{ rule.client_name }}</option>
+              {% endif %}
+            </select>
+            <input type="hidden" id="e_client_id" name="client_id" value="{{ rule.client_id }}" required>
+            <div class="form-text">Changing client will reset Topic/Device/Destinations.</div>
+            <div class="invalid-feedback">Please choose a client.</div>
+          </div>
+
+          <!-- PRIORITY -->
+          <div class="col-md-3">
+            <label for="e_priority" class="form-label">Priority</label>
+            <input type="number" class="form-control" id="e_priority" name="priority"
+                   min="0" max="100000" step="1"
+                   value="{{ rule.priority or 100 }}" required>
+            <div class="form-text">Lower value = higher priority.</div>
+            <div class="invalid-feedback">Provide a valid priority.</div>
+          </div>
+
+          <!-- ACTIVE -->
+          <div class="col-md-3 d-flex align-items-end">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="e_active" name="active"
+                     {{ rule.active and 'checked' or '' }}>
+              <label class="form-check-label" for="e_active">Active</label>
+            </div>
+          </div>
+
+          <hr class="mt-2 mb-1"/>
+
+          <!-- TOPIC (optional, filtered by client) -->
+          <div class="col-md-6">
+            <label for="e_topic_select" class="form-label">Topic (optional)</label>
+            <select id="e_topic_select" class="form-select">
+              <option value="">Any topic</option>
+            </select>
+            <input type="hidden" id="e_topic_id" name="topic_id" value="{{ rule.topic_id or '' }}">
+          </div>
+
+          <!-- DEVICE (optional, filtered by client) -->
+          <div class="col-md-6">
+            <label for="e_device_select" class="form-label">Device (optional)</label>
+            <select id="e_device_select" class="form-select">
+              <option value="">Any device</option>
+            </select>
+            <input type="hidden" id="e_device_id" name="device_id" value="{{ rule.device_id or '' }}">
+          </div>
+
+          <!-- PARSER -->
+          <div class="col-md-6">
+            <label for="e_parser_select" class="form-label">Parser</label>
+            <select id="e_parser_select" class="form-select" required>
+              {% if rule.parser_id and (rule.parser_name or '') %}
+                <option value="{{ rule.parser_id }}" selected>{{ rule.parser_name }}</option>
+              {% endif %}
+            </select>
+            <input type="hidden" id="e_parser_id" name="parser_id" value="{{ rule.parser_id or '' }}">
+            <div class="invalid-feedback">Please choose a parser.</div>
+          </div>
+
+          <!-- PARSER CONFIG (plain JSON) -->
+          <div class="col-md-6">
+            <label for="e_parser_config" class="form-label">Parser Config (JSON)</label>
+            <textarea id="e_parser_config" name="parser_config" class="form-control font-monospace" rows="6"
+                      placeholder='{"threshold":25,"units":"C"}'>{{ rule.parser_config|tojson if rule.parser_config else '' }}</textarea>
+            <div class="invalid-feedback" id="e_parserConfigFeedback">Invalid JSON.</div>
+          </div>
+
+          <!-- CONDITIONS (mongo_dsl JSON) -->
+          <div class="col-12">
+            <label for="e_conditions" class="form-label">Conditions (mongo_dsl JSON, optional)</label>
+            <textarea id="e_conditions" name="conditions" class="form-control font-monospace" rows="6"
+                      placeholder='{"payload.temp":{"$gt":25}}'>{{ rule.conditions|tojson if rule.conditions else '' }}</textarea>
+            <div class="invalid-feedback" id="e_conditionsFeedback">Invalid JSON.</div>
+          </div>
+
+          <hr class="mt-2 mb-1"/>
+
+          <!-- DESTINATIONS (multi-select) -->
+          <div class="col-12">
+            <label for="e_destinations_select" class="form-label">Destinations</label>
+            <select id="e_destinations_select" class="form-select" multiple></select>
+            <div class="form-text">Pick one or more destinations for this client.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="saveEditRouteBtn" type="submit" class="btn btn-primary">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Save changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Tom Select -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+<script>
+// ---------- Helpers ----------
+function showAlert(message, variant='success') {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = `
+    <div class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>`;
+}
+function safeJsonParse(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  try { return JSON.parse(t); } catch(e) { throw new Error('Invalid JSON'); }
+}
+function pretty(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj ?? ''); } }
+
+// CSRF headers
+(function initCommonHeaders(){
+  const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+  const metaVal = metaCsrf ? metaCsrf.getAttribute('content') : "";
+  const jinjaVal = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  const csrfToken = metaVal || jinjaVal || "";
+  window._commonHeaders = { 'Content-Type': 'application/json', 'Accept':'application/json' };
+  if (csrfToken) window._commonHeaders['X-CSRFToken'] = csrfToken;
+})();
+
+// ----- Copy buttons -----
+document.getElementById('copyParserConfigBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_parser_config').innerText;
+  try { await navigator.clipboard.writeText(txt); showAlert('Parser config copied.'); }
+  catch { showAlert('Failed to copy.', 'danger'); }
+});
+document.getElementById('copyConditionsBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_conditions').innerText;
+  try { await navigator.clipboard.writeText(txt); showAlert('Conditions copied.'); }
+  catch { showAlert('Failed to copy.', 'danger'); }
+});
+
+// ----- Delete rule -----
+document.getElementById('deleteRuleBtn').addEventListener('click', async () => {
+  if (!confirm('Delete this routing rule permanently?')) return;
+  const btn = document.getElementById('deleteRuleBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch("{{ url_for('routes.deleteRoutingRule', routingrule_id=rule.id) }}", { method:'DELETE', headers: window._commonHeaders });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    showAlert('Rule deleted. Redirecting…');
+    setTimeout(() => { window.location.href = "{{ url_for('routes.listRoutingRules') }}"; }, 600);
+  } catch (err) {
+    btn.disabled = false;
+    showAlert('Failed to delete rule: ' + err.message, 'danger');
+  }
+});
+</script>
+
+<script>
+// ---------- Edit modal logic ----------
+async function fetchJSON(url){
+  const r = await fetch(url, { headers: window._commonHeaders });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function jsonValidator(textareaId, feedbackId){
+  const el = document.getElementById(textareaId);
+  const fb = document.getElementById(feedbackId);
+  function run(){
+    const raw = el.value.trim();
+    if (!raw){ el.setCustomValidity(''); return; }
+    try { JSON.parse(raw); el.setCustomValidity(''); if(fb) fb.textContent=''; }
+    catch(e){ el.setCustomValidity('Invalid JSON'); if(fb) fb.textContent='Invalid JSON syntax.'; }
+  }
+  el?.addEventListener('input', run); run();
+}
+
+const eClientIdEl = document.getElementById('e_client_id');
+const eTopicIdEl  = document.getElementById('e_topic_id');
+const eDeviceIdEl = document.getElementById('e_device_id');
+const eParserIdEl = document.getElementById('e_parser_id');
+
+// Tom Select instances
+const eClientTS = new TomSelect('#e_client_select', {
+  valueField:'id', labelField:'name', searchField:['name'],
+  create:false, allowEmptyOption:true, placeholder:'Type to search clients…',
+  loadThrottle:300,
+  load: async (query, cb) => {
+    if (!query || !query.trim()) return cb();
+    try {
+      const url = new URL('/clients', window.location.origin);
+      url.searchParams.set('name', query.trim()); url.searchParams.set('json','true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data)?data:(data.items||[]))
+        .map(c => ({ id:c.id ?? c._id ?? c.uuid ?? '', name:c.name ?? c.title ?? '' }))
+        .filter(it => it.id && it.name);
+      cb(items);
+    } catch { cb(); }
+  },
+  onChange: async (val) => {
+    eClientIdEl.value = val || '';
+    await reloadClientFiltered(val);
+  }
+});
+
+const eTopicTS = new TomSelect('#e_topic_select', {
+  valueField:'id', labelField:'label', searchField:['label'],
+  create:false, allowEmptyOption:true, placeholder:'Any topic',
+  onChange: (val)=> eTopicIdEl.value = val || ''
+});
+const eDeviceTS = new TomSelect('#e_device_select', {
+  valueField:'id', labelField:'label', searchField:['label'],
+  create:false, allowEmptyOption:true, placeholder:'Any device',
+  onChange: (val)=> eDeviceIdEl.value = val || ''
+});
+const eParserTS = new TomSelect('#e_parser_select', {
+  valueField:'id', labelField:'name', searchField:['name','code'],
+  create:false, allowEmptyOption:true, placeholder:'Type to search parsers…',
+  loadThrottle:300,
+  load: async (query, cb) => {
+    try{
+      const url = new URL('/parsers', window.location.origin);
+      if (query && query.trim()) url.searchParams.set('name', query.trim());
+      url.searchParams.set('active','1'); url.searchParams.set('json','true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data)?data:(data.items||[]))
+        .map(p => ({ id:p.id ?? p._id ?? '', name:p.name ?? p.code ?? ('parser#'+(p.id||'')) }))
+        .filter(it => it.id && it.name);
+      cb(items);
+    }catch{ cb(); }
+  },
+  onChange: (val)=> eParserIdEl.value = val || ''
+});
+const eDestTS = new TomSelect('#e_destinations_select', {
+  valueField:'id', labelField:'label', searchField:['label','type'],
+  create:false, plugins:['remove_button'], placeholder:'Select destinations…'
+});
+
+async function reloadClientFiltered(clientId){
+  // Topics
+  try{
+    const url = new URL('/topics', window.location.origin);
+    url.searchParams.set('client_id', clientId || ''); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(t => ({ id: t.mqtt_topic?.id ?? t.id ?? t.topic_id ?? '', label: t.mqtt_topic?.topic ?? t.topic ?? t.topic_string ?? ('topic#'+(t.id||'')) }))
+      .filter(x => x.id && x.label);
+
+    eTopicTS.clearOptions(); eTopicTS.addOption({id:'', label:'Any topic'});
+    items.forEach(x => eTopicTS.addOption(x));
+    const cur = "{{ rule.topic_id or '' }}";
+    if (cur) eTopicTS.setValue(cur, true);
+  }catch{
+    eTopicTS.clearOptions(); eTopicTS.addOption({id:'', label:'(failed to load)'});
+  }
+
+  // Devices
+  try{
+    const url = new URL('/devices', window.location.origin);
+    url.searchParams.set('client_id', clientId || ''); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(d => {
+        const label = d.label || [d.vendor, d.model, d.serial || d.sn].filter(Boolean).join(' ');
+        return { id: d.id ?? d._id ?? d.uuid ?? '', label: label || ('device#'+(d.id||'')) };
+      })
+      .filter(x => x.id && x.label);
+
+    eDeviceTS.clearOptions(); eDeviceTS.addOption({id:'', label:'Any device'});
+    items.forEach(x => eDeviceTS.addOption(x));
+    const cur = "{{ rule.device_id or '' }}";
+    if (cur) eDeviceTS.setValue(cur, true);
+  }catch{
+    eDeviceTS.clearOptions(); eDeviceTS.addOption({id:'', label:'(failed to load)'});
+  }
+
+  // Destinations
+  try{
+    const url = new URL('/client_destinations', window.location.origin);
+    url.searchParams.set('client_id', clientId || ''); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(x => {
+        const parts = [x.type?.toUpperCase()];
+        if (x.host) parts.push(x.host + (x.port?(':'+x.port):''));
+        if (x.database_name) parts.push(x.database_name);
+        if (x.uri) parts.push(x.uri);
+        return { id:x.id ?? x._id ?? '', label: (parts.filter(Boolean).join(' · ')) || ('dest#'+(x.id||'')) };
+      })
+      .filter(x => x.id && x.label);
+
+    eDestTS.clearOptions();
+    items.forEach(x => eDestTS.addOption(x));
+    // preselect current ones if your backend provides them as list of ids
+    const currentDestIds = {{ (destinations|map(attribute='id')|list)|tojson if destinations else '[]' }};
+    if (currentDestIds.length) eDestTS.setValue(currentDestIds, true);
+  }catch{
+    eDestTS.clearOptions();
+  }
+}
+
+// JSON validators
+jsonValidator('e_parser_config', 'e_parserConfigFeedback');   // plain JSON
+jsonValidator('e_conditions', 'e_conditionsFeedback');        // mongo_dsl JSON
+
+// Init when modal opens (ensures freshest lists)
+document.getElementById('editRouteModal').addEventListener('shown.bs.modal', async () => {
+  const cid = "{{ rule.client_id or '' }}";
+  const cname = "{{ rule.client_name or '' }}";
+  if (cid && cname) {
+    eClientTS.addOption({ id: cid, name: cname });
+    eClientTS.setValue(cid, true);
+  }
+  await reloadClientFiltered(cid);
+  // Parsers preload (if not already)
+  try {
+    const url = new URL('/parsers', window.location.origin);
+    url.searchParams.set('active','1'); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(p => ({ id:p.id ?? p._id ?? '', name:p.name ?? p.code ?? ('parser#'+(p.id||'')) }))
+      .filter(it => it.id && it.name);
+    items.forEach(p => eParserTS.addOption(p));
+    const cur = "{{ rule.parser_id or '' }}";
+    if (cur) eParserTS.setValue(cur, true);
+  } catch {}
+});
+
+// Submit edit
+(function(){
+  const form = document.getElementById('editRouteForm');
+  const btn = document.getElementById('saveEditRouteBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // Validate JSON fields
+    let parserCfg = null, condObj = null;
+    try { parserCfg = safeJsonParse(document.getElementById('e_parser_config').value); }
+    catch { form.classList.add('was-validated'); return; }
+    try { condObj = safeJsonParse(document.getElementById('e_conditions').value); }
+    catch { form.classList.add('was-validated'); return; }
+
+    // Required: client, priority, parser (optional in schema but usually needed)
+    const payload = {
+      client_id: parseInt(document.getElementById('e_client_id').value) || null,
+      topic_id:  parseInt(document.getElementById('e_topic_id').value)  || null,
+      device_id: parseInt(document.getElementById('e_device_id').value) || null,
+      parser_id: parseInt(document.getElementById('e_parser_id').value) || null,
+      parser_config: parserCfg,           // plain JSON object or null
+      conditions: condObj,                // mongo_dsl JSON object or null
+      priority: parseInt(document.getElementById('e_priority').value || '100', 10),
+      active: !!document.getElementById('e_active').checked,
+      destination_ids: eDestTS.getValue() // array of IDs
+    };
+
+    if (!payload.client_id || !payload.priority) {
+      form.classList.add('was-validated');
+      return;
+    }
+
+    btn.disabled = true; spinner.classList.remove('d-none');
+    try {
+      const res = await fetch("{{ url_for('routes.editRoutingRule', routingrule_id=rule.id) }}", {
+        method: 'PUT',
+        headers: window._commonHeaders,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+      const updated = data.rule || payload;
+
+      // Update view fields without reload
+      document.getElementById('v_priority').textContent = updated.priority;
+      const vActive = document.getElementById('v_active');
+      if (updated.active) { vActive.className='badge bg-success'; vActive.textContent='Active'; }
+      else { vActive.className='badge bg-secondary'; vActive.textContent='Inactive'; }
+      document.getElementById('v_client').textContent = updated.client_name || updated.client_id || '—';
+      document.getElementById('v_topic').textContent  = updated.topic_string || updated.topic_id || '—';
+      document.getElementById('v_device').textContent = updated.device_label || updated.device_id || '—';
+      document.getElementById('v_parser').textContent = updated.parser_name || updated.parser_id || '—';
+      document.getElementById('v_parser_config').textContent = updated.parser_config ? pretty(updated.parser_config) : '—';
+      document.getElementById('v_conditions').textContent = updated.conditions ? pretty(updated.conditions) : '—';
+
+      // Destinations view
+      const vDestList = document.getElementById('v_destinations');
+      const vDestEmpty = document.getElementById('v_destinations_empty');
+      if (Array.isArray(updated.destinations) && updated.destinations.length) {
+        if (vDestEmpty) vDestEmpty.remove();
+        if (!vDestList) {
+          // create UL if it doesn't exist (first time)
+          const ul = document.createElement('ul');
+          ul.id = 'v_destinations';
+          ul.className = 'list-group';
+          document.querySelector('#tab-details .card-body .row').appendChild(ul);
+        } else {
+          vDestList.innerHTML = '';
+        }
+        const target = document.getElementById('v_destinations') || ul;
+        updated.destinations.forEach(d => {
+          const li = document.createElement('li');
+          li.className = 'list-group-item d-flex justify-content-between align-items-center';
+          li.innerHTML = `<span><span class="badge bg-secondary me-2">${(d.type||'').toUpperCase()}</span>${d.label || d.id}</span><span class="text-muted small">#${d.id}</span>`;
+          target.appendChild(li);
+        });
+      } else {
+        // empty
+        if (vDestList) vDestList.innerHTML = '';
+        if (!document.getElementById('v_destinations_empty')) {
+          const div = document.createElement('div');
+          div.id = 'v_destinations_empty';
+          div.className = 'text-muted';
+          div.textContent = '—';
+          document.querySelector('#tab-details .card-body .row').appendChild(div);
+        }
+      }
+
+      // Close modal
+      const modalEl = document.getElementById('editRouteModal');
+      (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+      showAlert('Routing rule updated successfully.');
+    } catch (err) {
+      showAlert('Failed to update rule: ' + err.message, 'danger');
+    } finally {
+      btn.disabled = false; spinner.classList.add('d-none');
+    }
+  });
+})();
+</script>
+{% endblock %}

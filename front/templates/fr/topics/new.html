@@ -1,0 +1,259 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}New Topic - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top:50px;">Add New MQTT Topic</h1>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% if msgs %}
+    {% for category, msg in msgs %}
+      <div class="alert alert-{{ 'danger' if category=='error' else category }} alert-dismissible fade show" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('topics.newTopic') }}" class="needs-validation" novalidate>
+  {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+
+  <!-- Hidden fields posted to backend (match mqtt_topic columns) -->
+  <input type="hidden" id="client_id" name="client_id" value="{{ request.form.get('client_id','') }}" required>
+  <input type="hidden" id="device_id" name="device_id" value="{{ request.form.get('device_id','') }}">
+  <input type="hidden" id="topic"     name="topic"     value="{{ request.form.get('topic','') }}" required>
+
+  <div class="row g-3">
+    <!-- 1) CLIENT: real <select> with search -->
+    <div class="col-md-6">
+      <label for="client_select" class="form-label">Client</label>
+      <select id="client_select" class="form-select" aria-describedby="clientHelp" required>
+        {% if request.form.get('client_id') and request.form.get('client_name') %}
+          <option value="{{ request.form.get('client_id') }}" selected>{{ request.form.get('client_name') }}</option>
+        {% else %}
+          <option value="" selected disabled>Type to search clients…</option>
+        {% endif %}
+      </select>
+      <div class="form-text" id="clientHelp">Search and select a client. This will load its unlinked topics.</div>
+      <div class="invalid-feedback">Please choose a client.</div>
+    </div>
+
+    <!-- 2) UNLINKED TOPICS: real <select> with search -->
+    <div class="col-md-6">
+      <label for="topic_select" class="form-label">Unlinked Topic</label>
+      <select id="topic_select" class="form-select" aria-describedby="topicSelectHelp" disabled required>
+        <option value="" selected disabled>Choose a client first…</option>
+      </select>
+      <div class="form-text" id="topicSelectHelp">Only topics not yet linked for this client are shown.</div>
+      <div class="invalid-feedback">Please choose a topic.</div>
+    </div>
+
+    <!-- Read-only mirrors (not submitted) -->
+    <div class="col-12">
+      <label for="topic_display" class="form-label">Chosen Topic</label>
+      <input type="text" class="form-control" id="topic_display"
+             value="{{ request.form.get('topic','') }}"
+             placeholder="Will be filled after selecting a topic" readonly />
+    </div>
+
+    <div class="col-md-6">
+      <label for="device_display" class="form-label">Device (auto)</label>
+      <input type="text" class="form-control" id="device_display"
+             value="" placeholder="Auto-filled from the selected topic (may be empty)"
+             readonly />
+    </div>
+
+    <!-- Optional fields -->
+    <div class="col-md-6">
+      <label for="description" class="form-label">Description (optional)</label>
+      <input type="text" class="form-control" id="description" name="description"
+             placeholder="Short description"
+             value="{{ request.form.get('description','') }}" maxlength="512" />
+    </div>
+
+    <div class="col-md-4">
+      <label for="qos_default" class="form-label">Default QoS</label>
+      {% set qos_val = request.form.get('qos_default','0') %}
+      <select class="form-select" id="qos_default" name="qos_default">
+        <option value="0" {{ 'selected' if qos_val=='0' else '' }}>0 – At most once</option>
+        <option value="1" {{ 'selected' if qos_val=='1' else '' }}>1 – At least once</option>
+        <option value="2" {{ 'selected' if qos_val=='2' else '' }}>2 – Exactly once</option>
+      </select>
+    </div>
+
+    <div class="col-md-4 d-flex align-items-end">
+      <div class="form-check">
+        {% set active_val = request.form.get('active','1') %}
+        <input class="form-check-input" type="checkbox" value="1" id="active" name="active"
+               {{ 'checked' if active_val in ['1','true','on'] else '' }}>
+        <label class="form-check-label" for="active">Active</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Add Topic</button>
+    <a href="{{ url_for('topics.listTopics') }}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Tom Select (enhanced searchable selects) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+<script>
+  async function fetchJSON(url){
+    const r = await fetch(url, { headers: { 'Accept':'application/json' }});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  const clientIdEl     = document.getElementById('client_id');
+  const deviceIdEl     = document.getElementById('device_id');
+  const topicHiddenEl  = document.getElementById('topic');
+
+  const topicDisplay   = document.getElementById('topic_display');
+  const deviceDisplay  = document.getElementById('device_display');
+
+  const clientSelectEl = document.getElementById('client_select');
+  const topicSelectEl  = document.getElementById('topic_select');
+
+  // Store payload for topics in a map (topic -> payload) to avoid dataset sync issues
+  const topicPayload = new Map();
+
+  // CLIENT select with remote search
+  const clientSelectTS = new TomSelect('#client_select', {
+    valueField: 'id',
+    labelField: 'name',
+    searchField: ['name'],
+    create: false,
+    allowEmptyOption: true,
+    placeholder: 'Type to search clients…',
+    loadThrottle: 300,
+    load: async (query, callback) => {
+      if (!query || !query.trim()) return callback();
+      try {
+        const url = new URL('/clients', window.location.origin);
+        url.searchParams.set('name', query.trim());
+        url.searchParams.set('json', "true");
+        const data = await fetchJSON(url);
+        const items = (Array.isArray(data) ? data : (data.items || []))
+          .map(c => ({ id: c.id ?? c._id ?? c.uuid ?? '', name: c.name ?? c.title ?? '' }))
+          .filter(it => it.id && it.name);
+        callback(items);
+      } catch { callback(); }
+    },
+    onChange: async (clientId) => {
+      clientIdEl.value = clientId || '';
+
+      // Reset topic/device fields
+      topicHiddenEl.value = '';
+      topicDisplay.value  = '';
+      deviceIdEl.value    = '';
+      deviceDisplay.value = '';
+
+      await loadUnlinkedTopicsForClient(clientId);
+    }
+  });
+
+  // TOPIC select (options loaded after client pick)
+  const topicSelectTS = new TomSelect('#topic_select', {
+    create: false,
+    searchField: ['text'],
+    allowEmptyOption: false,
+    placeholder: 'Choose a topic…',
+    onChange: (value) => {
+      const payload = topicPayload.get(value) || null;
+      // Fill hidden + display
+      topicHiddenEl.value = value || '';
+      topicDisplay.value  = value || '';
+
+      if (payload && payload.device && payload.device.id){
+        deviceIdEl.value   = payload.device.id;
+        deviceDisplay.value= payload.device.label || ('#' + payload.device.id);
+      } else {
+        deviceIdEl.value   = '';
+        deviceDisplay.value= '';
+      }
+    }
+  });
+
+  // Load unlinked topics for a client into the topic <select>
+  async function loadUnlinkedTopicsForClient(clientId){
+    topicSelectEl.disabled = true;
+    topicSelectTS.clear(true);
+    topicSelectTS.clearOptions();
+    topicPayload.clear();
+
+    if (!clientId) return;
+
+    try {
+      const url = new URL('/unlinked_topics', window.location.origin);
+      url.searchParams.set('client_id', clientId);
+      url.searchParams.set('json', "true");
+      const data = await fetchJSON(url);
+
+      const items = (Array.isArray(data) ? data : (data.items || []))
+        .map(t => {
+          const devId    = t.device?.id ?? t.device_id ?? '';
+          const devLabel = ([t.device?.name,t.device_type?.vendor, t.device_type?.model, t.device_type?.serial].filter(Boolean).join(' ')) || (devId ? ('#'+devId) : '');
+          const topicStr = t.device?.topic || '';
+          const text     = devId ? `${topicStr} — device: ${devLabel}` : topicStr;
+          const payload  = { topic: topicStr, device: devId ? { id: devId, label: devLabel } : null };
+          return { value: topicStr, text, payload };
+        })
+        .filter(it => it.value);
+
+      if (!items.length){
+        topicSelectTS.addOption({ value: '', text: 'No unlinked topics for this client' });
+        topicSelectTS.disable();
+        return;
+      }
+
+      items.forEach(it => {
+        topicSelectTS.addOption({ value: it.value, text: it.text });
+        topicPayload.set(it.value, it.payload);
+      });
+      topicSelectTS.refreshOptions(false);
+      topicSelectTS.enable();
+      topicSelectEl.disabled = false;
+
+      // Restore selection if server re-rendered with a topic
+      const existingTopic = "{{ request.form.get('topic','') }}".trim();
+      if (existingTopic && topicPayload.has(existingTopic)) {
+        topicSelectTS.setValue(existingTopic, true);
+      }
+    } catch {
+      topicSelectTS.clearOptions();
+      topicSelectTS.addOption({ value:'', text:'Failed to load topics' });
+      topicSelectTS.disable();
+    }
+  }
+
+  // Bootstrap validation
+  (function(){
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(forms).forEach(function(form){
+      form.addEventListener('submit', function(event){
+        if (!clientIdEl.value) { event.preventDefault(); event.stopPropagation(); }
+        if (!topicHiddenEl.value) { event.preventDefault(); event.stopPropagation(); }
+        form.classList.add('was-validated');
+      }, false);
+    });
+  })();
+
+  // On load: restore client/topic if provided by server
+  window.addEventListener('DOMContentLoaded', async () => {
+    const existingClientId   = "{{ request.form.get('client_id','') }}".trim();
+    const existingClientName = "{{ request.form.get('client_name','') }}".trim();
+    if (existingClientId && existingClientName) {
+      clientSelectTS.addOption({ id: existingClientId, name: existingClientName });
+      clientSelectTS.setValue(existingClientId, true);
+      await loadUnlinkedTopicsForClient(existingClientId);
+    }
+  });
+</script>
+{% endblock %}

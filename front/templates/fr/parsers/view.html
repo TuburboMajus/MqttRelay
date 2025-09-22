@@ -1,0 +1,678 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Parser {{ parser['name'] }} v{{ parser['version'] }} - TechDash{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">Parser: {{ parser['name'] }} <small class="text-muted">v{{ parser['version'] }}</small></h1>
+
+<div id="alertContainer"></div>
+
+<a href="{{ url_for('parsers.listParsers') }}" class="btn btn-outline-secondary mb-3">
+  <i class="bi bi-arrow-left"></i> Back to Parsers
+</a>
+
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+    <span>Parser Details</span>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#editParserModal">
+        <i class="bi bi-pencil"></i> Edit
+      </button>
+      <button id="deleteParserBtn" class="btn btn-sm btn-danger">
+        <i class="bi bi-trash"></i> Delete
+      </button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <p class="mb-1"><strong>ID:</strong> <span id="v_id">{{ parser.id }}</span></p>
+        <p class="mb-1"><strong>Name:</strong> <span id="v_name">{{ parser['name'] }}</span></p>
+        <p class="mb-1"><strong>Version:</strong> <span id="v_version">{{ parser['version'] }}</span></p>
+        <p class="mb-1"><strong>Language:</strong> <span id="v_language">{{ parser['language'] or '-' }}</span></p>
+        <p class="mb-1">
+          <strong>Status:</strong>
+          {% if parser.active %}
+            <span id="v_active" class="badge bg-success">Active</span>
+          {% else %}
+            <span id="v_active" class="badge bg-secondary">Inactive</span>
+          {% endif %}
+        </p>
+      </div>
+      <div class="col-md-8">
+        <p class="mb-1"><strong>Description:</strong></p>
+        <p id="v_description" class="text-muted">{{ parser['description'] or '—' }}</p>
+      </div>
+
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong class="mb-2">Config Schema (JSON)</strong>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="copySchemaBtn">
+            <i class="bi bi-clipboard"></i> Copy
+          </button>
+        </div>
+        <pre id="v_config_schema" class="bg-light p-3 rounded small mb-0" style="max-height: 360px; overflow:auto;">{{ parser['config_schema']|tojson(indent=2) if parser['config_schema'] else '—' }}</pre>
+      </div>
+
+      <div class="col-12 mt-4">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong class="mb-2">Source Code</strong>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editParserCodeModal">
+            <i class="bi bi-pencil"></i> Edit
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="copyCodeBtn">
+            <i class="bi bi-clipboard"></i> Copy
+          </button>
+        </div>
+        <pre id="v_code" class="bg-light p-3 rounded small mb-0" style="max-height: 360px; overflow:auto; white-space: pre;">{{ code or '—' }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Parser Modal -->
+<div class="modal fade" id="editParserModal" tabindex="-1" aria-labelledby="editParserLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <form class="modal-content" id="editParserForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editParserLabel">Edit Parser</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="e_name" class="form-label">Name <span class="text-danger">*</span></label>
+            <input id="e_name" name="name" class="form-control" required pattern="^[A-Za-z0-9 ]+$" maxlength="128"
+                   value="{{ parser['name'] }}" aria-describedby="nameHelp">
+            <div id="nameHelp" class="form-text">Letters, numbers and spaces only.</div>
+            <div class="invalid-feedback">Use only letters, numbers and spaces.</div>
+          </div>
+
+          <div class="col-md-3">
+            <label for="e_version" class="form-label">Version <span class="text-danger">*</span></label>
+            <input id="e_version" name="version" class="form-control" required maxlength="32"
+                   pattern="^[0-9]+(\.[0-9]+){2}$" value="{{ parser['version'] }}"
+                   aria-describedby="versionHelp">
+            <div id="versionHelp" class="form-text">Format <code>x.x.x</code> (e.g., 1.2.3).</div>
+            <div class="invalid-feedback">Version must match <code>x.x.x</code>.</div>
+          </div>
+
+          <div class="col-md-3">
+            <label for="e_language" class="form-label">Language</label>
+            <select id="e_language" name="language" class="form-select">
+              {% set langs = ['python','javascript','sql','bash','go','rust'] %}
+              <option value="" {{ '' == (parser['language'] or '') and 'selected' or '' }}>— Select —</option>
+              {% for lang in langs %}
+              <option value="{{ lang }}" {{ lang == (parser['language'] or '') and 'selected' or '' }}>{{ lang|capitalize }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-12">
+            <label for="e_description" class="form-label">Description</label>
+            <textarea id="e_description" name="description" class="form-control" rows="3">{{ parser['description'] or '' }}</textarea>
+          </div>
+
+          <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+              <label for="e_config_schema" class="form-label mb-0">Config Schema (JSON)</label>
+              <div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnFormatJson">
+                  <i class="bi bi-braces"></i> Format JSON
+                </button>
+                <span id="jsonStatus" class="ms-2 small text-muted"></span>
+              </div>
+            </div>
+            <textarea id="e_config_schema" name="config_schema" class="form-control font-monospace" rows="10">{% if parser['config_schema'] %}{{ parser['config_schema']|tojson(indent=2) }}{% endif %}</textarea>
+            <div class="form-text">
+              Optional JSON Schema describing the parser configuration.
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="e_active" name="active" {{ parser.active and 'checked' or '' }}>
+              <label class="form-check-label" for="e_active">Active</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="saveEditBtn" type="submit" class="btn btn-primary">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Save changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<div class="modal fade" id="editParserCodeModal" tabindex="-1" aria-labelledby="editParserLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <form class="modal-content" id="editParserCodeForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editParserLabel">Edit Parser Code</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+              <label for="e_code" class="form-label mb-0">Source Code</label>
+              <span class="small text-muted" id="codeLangHint"></span>
+            </div>
+            <!-- Hidden textarea is the form field; CodeMirror will mount over it -->
+            <textarea id="e_code" name="code" class="form-control font-monospace" rows="12">{{ code or '' }}</textarea>
+            <div class="form-text">The parser must contain a parse class that returns a dictionnary (int, dynamic) associating metric ids with their values. For reference here are the metrics</div>
+          </div>
+
+          <table class="table table-hover align-middle" id="metricsTable">
+            <thead class="table-dark">
+              <tr>
+                <th style="width: 90px;">ID</th>
+                <th>Key</th>
+                <th>Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for m in metrics %}
+              <tr id="metric-row-{{ m.id }}">
+                <td>{{ m.id }}</td>
+                <td class="m-key"><code>{{ m.key_name }}</code></td>
+                <td class="m-unit">{{ m.default_unit or '-' }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+
+          <div class="col-12 mt-3">
+            <div class="d-flex flex-wrap gap-2 align-items-end">
+              <div class="flex-grow-1">
+                <label for="deviceSelect" class="form-label mb-1">Device</label>
+                <select id="deviceSelect" class="form-select">
+                  <option value="">— Select a device —</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label mb-1 invisible">.</label>
+                <button type="button" id="btnFetchExample" class="btn btn-outline-primary w-100">
+                  <i class="bi bi-cloud-download"></i> fecth example data packet
+                </button>
+              </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <strong class="mb-0">Example Packet</strong>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="copyExampleBtn">
+                <i class="bi bi-clipboard"></i> Copy
+              </button>
+            </div>
+            <pre id="examplePacket" class="bg-light p-3 rounded small" style="max-height: 300px; overflow:auto; white-space: pre;">—</pre>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="saveEditCodeBtn" type="submit" class="btn btn-primary">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Save changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// ---------- Helpers ----------
+function showAlert(message, variant='success') {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = `
+    <div class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>`;
+}
+function safeJsonParse(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  try { return JSON.parse(t); } catch(e) { throw new Error('Invalid JSON'); }
+}
+function pretty(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj ?? ''); } }
+
+// ---------- CSRF & headers ----------
+(function initCommonHeaders(){
+  const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+  const metaVal = metaCsrf ? metaCsrf.getAttribute('content') : "";
+  const jinjaVal = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  const csrfToken = metaVal || jinjaVal || "";
+  window._commonHeaders = { 'Content-Type': 'application/json' };
+  if (csrfToken) window._commonHeaders['X-CSRFToken'] = csrfToken;
+})();
+
+// ---------- Copy schema ----------
+document.getElementById('copySchemaBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_config_schema').innerText;
+  try {
+    await navigator.clipboard.writeText(txt);
+    showAlert('Config schema copied to clipboard.');
+  } catch {
+    showAlert('Failed to copy to clipboard.', 'danger');
+  }
+});
+
+// ---------- Delete parser ----------
+document.getElementById('deleteParserBtn').addEventListener('click', async () => {
+  if (!confirm('Delete this parser permanently? This cannot be undone.')) return;
+  const btn = document.getElementById('deleteParserBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch("{{ url_for('parsers.deleteParser', parser_id=parser['id']) }}", {
+      method: 'DELETE',
+      headers: window._commonHeaders
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    showAlert('Parser deleted. Redirecting…');
+    setTimeout(() => { window.location.href = "{{ url_for('parsers.listParsers') }}"; }, 600);
+  } catch (err) {
+    btn.disabled = false;
+    showAlert('Failed to delete parser: ' + err.message, 'danger');
+  }
+});
+
+// ---------- Edit modal behavior ----------
+(() => {
+  const form = document.getElementById('editParserForm');
+  const btn = document.getElementById('saveEditBtn');
+  const spinner = btn.querySelector('.spinner-border');
+  const nameEl = document.getElementById('e_name');
+  const versionEl = document.getElementById('e_version');
+  const cfgEl = document.getElementById('e_config_schema');
+  const statusEl = document.getElementById('jsonStatus');
+
+  // live sanitization
+  nameEl.addEventListener('input', () => {
+    const cleaned = nameEl.value.replace(/[^A-Za-z0-9 ]+/g, '');
+    if (cleaned !== nameEl.value) nameEl.value = cleaned;
+    nameEl.value = nameEl.value.replace(/\s{2,}/g, ' ');
+  });
+  versionEl.addEventListener('input', () => {
+    const cleaned = versionEl.value.replace(/[^0-9.]/g, '');
+    if (cleaned !== versionEl.value) versionEl.value = cleaned;
+  });
+
+  // format JSON
+  document.getElementById('btnFormatJson').addEventListener('click', () => {
+    const txt = cfgEl.value.trim();
+    if (!txt) return;
+    try {
+      const obj = JSON.parse(txt);
+      cfgEl.value = JSON.stringify(obj, null, 2);
+      statusEl.textContent = 'Formatted ✓';
+      statusEl.className = 'ms-2 small text-success';
+    } catch {
+      statusEl.textContent = 'Invalid JSON ✗';
+      statusEl.className = 'ms-2 small text-danger';
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // client-side patterns
+    nameEl.value = nameEl.value.trim().replace(/\s{2,}/g, ' ');
+    versionEl.value = versionEl.value.trim();
+
+    // validate JSON
+    let schemaObj = null;
+    try {
+      schemaObj = safeJsonParse(cfgEl.value);
+      if (schemaObj) {
+        statusEl.textContent = 'JSON looks valid ✓';
+        statusEl.className = 'ms-2 small text-success';
+      } else {
+        statusEl.textContent = '';
+        statusEl.className = 'ms-2 small text-muted';
+      }
+    } catch (err) {
+      statusEl.textContent = 'Invalid JSON ✗';
+      statusEl.className = 'ms-2 small text-danger';
+      form.classList.add('was-validated');
+      return;
+    }
+
+    if (!form.checkValidity()) {
+      form.classList.add('was-validated');
+      return;
+    }
+
+    const payload = {
+      name: nameEl.value,
+      version: versionEl.value,
+      language: document.getElementById('e_language').value || null,
+      description: document.getElementById('e_description').value || null,
+      config_schema: schemaObj,        // send as JSON object
+      active: !!document.getElementById('e_active').checked
+    };
+
+    btn.disabled = true; spinner.classList.remove('d-none');
+    try {
+      const res = await fetch("{{ url_for('parsers.editParser', parser_id=parser['id']) }}", {
+        method: 'PUT',
+        headers: window._commonHeaders,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+      const updated = data.parser || payload;
+
+      // Update view fields
+      document.getElementById('v_name').textContent = updated.name;
+      document.getElementById('v_version').textContent = updated.version;
+      document.getElementById('v_language').textContent = updated.language || '-';
+      document.getElementById('v_description').textContent = updated.description || '—';
+      const cs = updated.config_schema ?? null;
+      document.getElementById('v_config_schema').textContent = cs ? pretty(cs) : '—';
+      const vActive = document.getElementById('v_active');
+      if (updated.active) {
+        vActive.className = 'badge bg-success';
+        vActive.textContent = 'Active';
+      } else {
+        vActive.className = 'badge bg-secondary';
+        vActive.textContent = 'Inactive';
+      }
+
+      // Update title
+      document.title = `Parser ${updated.name} v${updated.version} - TechDash`;
+
+      // Close modal & notify
+      const modalEl = document.getElementById('editParserModal');
+      (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+      showAlert('Parser updated successfully.');
+    } catch (err) {
+      showAlert('Failed to update parser: ' + err.message, 'danger');
+    } finally {
+      btn.disabled = false; spinner.classList.add('d-none');
+    }
+  });
+})();
+
+(() => {
+  const form = document.getElementById('editParserCodeForm');
+  const btn = document.getElementById('saveEditCodeBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // sync CM -> textarea before reading form fields
+    if (codeEditor) {
+      document.getElementById('e_code').value = codeEditor.getValue();
+    }
+
+    const payload = {
+      code: document.getElementById('e_code').value || null
+    };
+
+    btn.disabled = true; spinner.classList.remove('d-none');
+    try {
+      const res = await fetch("{{ url_for('parsers.editParser', parser_id=parser['id']) }}", {
+        method: 'PUT',
+        headers: window._commonHeaders,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+      const updated = data.parser || payload;
+
+      document.getElementById('v_code').textContent = updated.code || '—';
+
+      const modalEl = document.getElementById('editParserCodeModal');
+      (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+      showAlert('Parser updated successfully.');
+    } catch (err) {
+      showAlert('Failed to update parser: ' + err.message, 'danger');
+    } finally {
+      btn.disabled = false; spinner.classList.add('d-none');
+    }
+  });
+})();
+</script>
+
+<script>
+// ---- Dynamically load CodeMirror assets so we don't touch base.html ----
+const _cmAssets = {
+  css: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css",
+  js:  "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js",
+  addons: [
+    "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"
+  ],
+  modes: {
+    python: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js",
+    javascript: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js",
+    sql: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js",
+    bash: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js",
+    go: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js",
+    rust: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/rust/rust.min.js"
+  }
+};
+
+function loadCSS(href){ return new Promise((res, rej)=>{ const l=document.createElement('link'); l.rel='stylesheet'; l.href=href; l.onload=res; l.onerror=()=>rej(new Error('CSS load failed: '+href)); document.head.appendChild(l); }); }
+function loadJS(src){ return new Promise((res, rej)=>{ const s=document.createElement('script'); s.src=src; s.defer=true; s.onload=res; s.onerror=()=>rej(new Error('JS load failed: '+src)); document.head.appendChild(s); }); }
+
+async function ensureCodeMirror(){
+  if (window.CodeMirror) return;
+  await loadCSS(_cmAssets.css);
+  await loadJS(_cmAssets.js);
+  for (const a of _cmAssets.addons) { await loadJS(a); }
+}
+
+// Load a language mode only once
+const _loadedModes = new Set();
+async function ensureMode(lang){
+  const url = _cmAssets.modes[lang];
+  if (!url || _loadedModes.has(lang)) return;
+  await loadJS(url);
+  _loadedModes.add(lang);
+}
+</script>
+
+<script>
+let codeEditor = null;
+
+// map language -> CodeMirror mode name
+const LANG_TO_MODE = {
+  python: 'python',
+  javascript: 'javascript',
+  sql: 'sql',
+  bash: 'shell',
+  go: 'go',
+  rust: 'rust'
+};
+
+// --- Copy code viewer ---
+document.getElementById('copyCodeBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_code').innerText;
+  try {
+    await navigator.clipboard.writeText(txt);
+    showAlert('Code copied to clipboard.');
+  } catch {
+    showAlert('Failed to copy code.', 'danger');
+  }
+});
+
+const editModalEl = document.getElementById('editParserCodeModal');
+editModalEl.addEventListener('shown.bs.modal', async () => {
+  // lazy-load CM if needed
+  await ensureCodeMirror();
+
+  const textarea = document.getElementById('e_code');
+  if (!codeEditor) {
+    codeEditor = CodeMirror.fromTextArea(textarea, {
+      lineNumbers: true,
+      lineWrapping: false,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      indentUnit: 2,
+      tabSize: 2,
+      indentWithTabs: false,
+      viewportMargin: Infinity // let it grow to fit
+    });
+  }
+
+  // Set the mode based on the selected language
+  const langSel = document.getElementById('e_language');
+  const lang = (langSel.value || '').toLowerCase();
+  await setEditorMode(lang);
+  updateCodeLangHint(lang);
+  codeEditor.refresh(); // in case modal caused sizing issues
+});
+
+// Helper to set mode and load it if needed
+async function setEditorMode(lang) {
+  const modeName = LANG_TO_MODE[lang] || null;
+  if (!modeName) { codeEditor.setOption('mode', null); return; }
+  await ensureMode(lang);
+  codeEditor.setOption('mode', modeName);
+}
+
+// tiny hint near the label
+function updateCodeLangHint(lang){
+  const el = document.getElementById('codeLangHint');
+  el.textContent = lang ? `Highlighting: ${lang}` : '';
+}
+
+// React to language changes live (while modal is open)
+document.getElementById('e_language').addEventListener('change', async (e) => {
+  const lang = (e.target.value || '').toLowerCase();
+  if (codeEditor) {
+    await setEditorMode(lang);
+    updateCodeLangHint(lang);
+  }
+});
+</script>
+
+<script>
+// ---------- Devices combo & example fetch ----------
+async function loadDevicesIntoSelect() {
+  const sel = document.getElementById('deviceSelect');
+  sel.innerHTML = `<option value="">— Select a device —</option>`;
+  try {
+    const res = await fetch('/devices?json=true', { headers: window._commonHeaders });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // Accept either {devices:[...]} or an array [...]
+    const list = Array.isArray(data) ? data : (data.devices || []);
+    // Try common shapes: {id,name}, {id,model,vendor}, {id,device_type:{...}}
+    for (const d of list) {
+      const id = d.id ?? d.device_id ?? d._id ?? d.uuid ?? d.devEUI ?? '';
+      if (!id) continue;
+      const model = d.model ?? d.name ?? (d.device_type?.model) ?? 'Device';
+      const vendor = d.vendor ?? (d.device_type?.vendor) ?? '';
+      const label = vendor ? `${vendor} — ${model} (${id})` : `${model} (${id})`;
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    }
+  } catch (err) {
+    showAlert('Failed to load devices: ' + err.message, 'danger');
+  }
+}
+
+// Pretty-print JSON if possible; else raw
+function prettyMaybe(text) {
+  const t = (text ?? '').toString().trim();
+  if (!t) return '—';
+  try {
+    const obj = JSON.parse(t);
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return t; // not JSON, print as-is
+  }
+}
+
+// Fetch and render example packet
+async function fetchExampleForSelected() {
+  const sel = document.getElementById('deviceSelect');
+  const out = document.getElementById('examplePacket');
+  const btn = document.getElementById('btnFetchExample');
+  const id = sel.value;
+  if (!id) {
+    showAlert('Please select a device first.', 'danger');
+    return;
+  }
+  btn.disabled = true;
+  const btnOld = btn.innerHTML;
+  btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Fetching…`;
+  try {
+    const res = await fetch(`/device/${encodeURIComponent(id)}/example`, { headers: window._commonHeaders });
+    if (!res.ok) {
+      // Try to read text for better error info
+      const txt = await res.text().catch(()=> '');
+      throw new Error(txt || `HTTP ${res.status}`);
+    }
+
+    // Try JSON first; if not JSON, use text
+    let bodyText = '';
+    const ct = res.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) {
+      const obj = await res.json();
+      bodyText = JSON.stringify(obj, null, 2);
+    } else {
+      bodyText = await res.text();
+      bodyText = prettyMaybe(bodyText);
+    }
+    out.textContent = bodyText;
+
+    // Optionally inject into CodeMirror as a convenience if editor exists and user wants to start from it:
+    // if (codeEditor) codeEditor.setValue(bodyText);
+
+    showAlert('Example packet fetched.');
+  } catch (err) {
+    out.textContent = '—';
+    showAlert('Failed to fetch example packet: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = btnOld;
+  }
+}
+
+// Copy example
+document.getElementById('copyExampleBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('examplePacket').innerText;
+  try {
+    await navigator.clipboard.writeText(txt);
+    showAlert('Example packet copied to clipboard.');
+  } catch {
+    showAlert('Failed to copy example packet.', 'danger');
+  }
+});
+
+// Wire button
+document.getElementById('btnFetchExample').addEventListener('click', fetchExampleForSelected);
+
+// Load devices whenever the modal opens (ensures freshness)
+document.getElementById('editParserCodeModal').addEventListener('shown.bs.modal', () => {
+  loadDevicesIntoSelect();
+});
+</script>
+{% endblock %}
