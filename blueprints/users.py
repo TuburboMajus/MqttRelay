@@ -30,7 +30,7 @@ def listUsers(pagination):
 	return AuthenticatedUserTemplate(
 		Path(users_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("users").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("users").render()
 
 
 @users_blueprint.route('/user')
@@ -39,7 +39,7 @@ def listUsers(pagination):
 def newUser():
 	return AuthenticatedUserTemplate(
 		Path(users_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_sidebar("users").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("users").render()
 
 
 @users_blueprint.route('/user',methods=["POST"])
@@ -65,7 +65,7 @@ def viewUser(user_id):
 	return AuthenticatedUserTemplate(
 		Path(users_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
 		user=user
-	).handles_success_and_error().with_dictionnary().with_sidebar("users").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("users").render()
 
 
 @users_blueprint.route('/user/<string:user_id>', methods=["PUT", "PATCH"])
@@ -87,13 +87,13 @@ def editUser(form, user_id):
 @login_required
 @body_content('json')
 def changePassword(form, user_id):
-	user = User.storage.get(id=userid)
+	user = User.storage.get(id=user_id)
 
 	if user is None:
-		return Response(status=404)
+		return abort(404)
 
 	if user['id'] != current_user['id']:
-		return Response(status=404)
+		return abort(404)
 		
 	if user.attributes['password'] != form['password']:
 		return {"status":"error", "data":g.dictionnary['profile']['wrong_password']}

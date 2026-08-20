@@ -1,0 +1,81 @@
+htmlCopy code<div class="modal fade" id="editParserCodeModal" tabindex="-1" aria-labelledby="editParserLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <form class="modal-content" id="editParserCodeForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editParserLabel">Modifier le code du parseur</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+      </div>
+
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+              <label for="e_code" class="form-label mb-0">Code source</label>
+              <span class="small text-muted" id="codeLangHint"></span>
+            </div>
+            <!-- Hidden textarea is the form field; CodeMirror will mount over it -->
+            <textarea id="e_code" name="code" class="form-control font-monospace" rows="12">{{ code or '' }}</textarea>
+            <div class="form-text">Le parseur doit contenir une classe parse qui renvoie un dictionnaire (int, dynamique) associant les ID de métrique à leurs valeurs. Pour référence, voici les métriques</div>
+          </div>
+
+          <table class="table table-hover align-middle" id="metricsTable">
+            <thead class="table-dark">
+              <tr>
+                <th style="width: 90px;">ID</th>
+                <th>Clé</th>
+                <th>Unité</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for m in metrics %}
+              <tr id="metric-row-{{ m.id }}">
+                <td>{{ m.id }}</td>
+                <td class="m-key"><code>{{ m.key_name }}</code></td>
+                <td class="m-unit">{{ m.default_unit or '-' }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+
+          <div class="col-12 mt-3">
+            <div class="d-flex flex-wrap gap-2 align-items-end">
+              <div class="flex-grow-1">
+                <label for="deviceSelect" class="form-label mb-1">Appareil</label>
+                <select id="deviceSelect" class="form-select">
+                  <option value="">— Sélectionnez un appareil —</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label mb-1 invisible">.</label>
+                <button type="button" id="btnFetchExample" class="btn btn-outline-primary w-100">
+                  <i class="bi bi-cloud-download"></i> récupérer un paquet de données d’exemple
+                </button>
+              </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <strong class="mb-0">Paquet d’exemple</strong>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="copyExampleBtn">
+                <i class="bi bi-clipboard"></i> Copier
+              </button>
+            </div>
+            <pre id="examplePacket" class="bg-light p-3 rounded small" style="max-height: 300px; overflow:auto; white-space: pre;">—</pre>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button id="saveEditCodeBtn" type="submit" class="btn btn-primary">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Enregistrer les modifications
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

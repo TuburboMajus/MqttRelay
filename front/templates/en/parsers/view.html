@@ -1,0 +1,82 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Parser {{ parser['name'] }} v{{ parser['version'] }} - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">Parser: {{ parser['name'] }} <small class="text-muted">v{{ parser['version'] }}</small></h1>
+
+<div id="alertContainer"></div>
+
+<a href="{{ url_for('parsers.listParsers') }}" class="btn btn-outline-secondary mb-3">
+  <i class="bi bi-arrow-left"></i> Back to Parsers
+</a>
+
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+    <span>Parser Details</span>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#editParserModal">
+        <i class="bi bi-pencil"></i> Edit
+      </button>
+      <button id="deleteParserBtn" class="btn btn-sm btn-danger">
+        <i class="bi bi-trash"></i> Delete
+      </button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <p class="mb-1"><strong>ID:</strong> <span id="v_id">{{ parser.id }}</span></p>
+        <p class="mb-1"><strong>Name:</strong> <span id="v_name">{{ parser['name'] }}</span></p>
+        <p class="mb-1"><strong>Version:</strong> <span id="v_version">{{ parser['version'] }}</span></p>
+        <p class="mb-1"><strong>Language:</strong> <span id="v_language">{{ parser['language'] or '-' }}</span></p>
+        <p class="mb-1">
+          <strong>Status:</strong>
+          {% if parser.active %}
+            <span id="v_active" class="badge bg-success">Active</span>
+          {% else %}
+            <span id="v_active" class="badge bg-secondary">Inactive</span>
+          {% endif %}
+        </p>
+      </div>
+      <div class="col-md-8">
+        <p class="mb-1"><strong>Description:</strong></p>
+        <p id="v_description" class="text-muted">{{ parser['description'] or '—' }}</p>
+      </div>
+
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong class="mb-2">Config Schema (JSON)</strong>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="copySchemaBtn">
+            <i class="bi bi-clipboard"></i> Copy
+          </button>
+        </div>
+        <pre id="v_config_schema" class="bg-light p-3 rounded small mb-0" style="max-height: 360px; overflow:auto;">{{ parser['config_schema']|tojson(indent=2) if parser['config_schema'] else '—' }}</pre>
+      </div>
+
+      <div class="col-12 mt-4">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong class="mb-2">Source Code</strong>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editParserCodeModal">
+            <i class="bi bi-pencil"></i> Edit
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="copyCodeBtn">
+            <i class="bi bi-clipboard"></i> Copy
+          </button>
+        </div>
+        <pre id="v_code" class="bg-light p-3 rounded small mb-0" style="max-height: 360px; overflow:auto; white-space: pre;">{{ code or '—' }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include 'en/parsers/dialogs/editParserDialog.html' %}
+{% include 'en/parsers/dialogs/editParserCodeDialog.html' %}
+
+{% endblock %}
+
+
+{% block scripts %}
+
+{% include 'en/parsers/scripts/view.js.html' %}
+
+{% endblock %}

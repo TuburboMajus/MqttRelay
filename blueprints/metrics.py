@@ -34,7 +34,7 @@ def listMetrics(pagination):
 def newMetric():
 	return AuthenticatedUserTemplate(
 		Path(metrics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_sidebar("metrics").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("metrics").render()
 
 
 @metrics_blueprint.route('/metric',methods=["POST"])
@@ -57,7 +57,7 @@ def viewMetric(metric_id):
 	return AuthenticatedUserTemplate(
 		Path(metrics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
 		metric=metric
-	).handles_success_and_error().with_dictionnary().with_sidebar("metrics").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("metrics").render()
 
 
 

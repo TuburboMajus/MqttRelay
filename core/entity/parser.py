@@ -38,10 +38,9 @@ class Metric(Entity):
         {"name":"key_name","type":StringAttribute,"max_length":128,"required":True,"is_nullable":False},
         {"name":"default_unit","type":StringAttribute,"max_length":32},
         {"name":"description","type":StringAttribute,"max_length":512},
-        {"name":"digiupagri_ref","type":StringAttribute,"max_length":3,"required":True,"is_nullable":False},
     ]
 
-    UPDATABLE_FIELDS = ["key_name","default_unit","description","digiupagri_ref"]
+    UPDATABLE_FIELDS = ["key_name","default_unit","description"]
 
 class ParsedPoint(Entity):
     ENTITY_NAME = "parsed_point"

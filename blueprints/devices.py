@@ -33,7 +33,7 @@ def listDevices(pagination):
 	return AuthenticatedUserTemplate(
 		Path(devices_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("devices").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("devices").render()
 
 
 @devices_blueprint.route('/device')
@@ -42,7 +42,7 @@ def listDevices(pagination):
 def newDevice():
 	return AuthenticatedUserTemplate(
 		Path(devices_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_sidebar("devices").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("devices").render()
 
 
 @devices_blueprint.route('/device',methods=["POST"])
@@ -68,7 +68,7 @@ def viewDevice(device_id):
 	return AuthenticatedUserTemplate(
 		Path(devices_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
 		device=device
-	).handles_success_and_error().with_dictionnary().with_sidebar("devices").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("devices").render()
 
 
 @devices_blueprint.route('/device/<int:device_id>/example')

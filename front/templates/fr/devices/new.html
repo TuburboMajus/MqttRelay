@@ -1,8 +1,8 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}New Device Type - MqttRelay{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Nouveau type d’appareil - MqttRelay{% endblock %}
 {% block content %}
 
-<h1 class="mb-4" style="margin-top:50px;">Add New Device Type</h1>
+<h1 class="mb-4" style="margin-top:50px;">Ajouter un nouveau type d’appareil</h1>
 
 {% with msgs = get_flashed_messages(with_categories=true) %}
   {% if msgs %}
@@ -20,7 +20,7 @@
 
   <div class="row g-3">
     <div class="col-md-6">
-      <label for="vendor" class="form-label">Vendor</label>
+      <label for="vendor" class="form-label">Fournisseur</label>
       <input
         type="text"
         class="form-control"
@@ -35,13 +35,13 @@
         autofocus
         aria-describedby="vendorHelp vendorFeedback vendorModelCheck"
       />
-      <div class="form-text" id="vendorHelp">Hardware vendor/brand (max 128 chars).</div>
-      <div class="invalid-feedback" id="vendorFeedback">Please enter a valid vendor.</div>
-      <div class="form-text" id="vendorModelCheck" hidden>Checking…</div>
+      <div class="form-text" id="vendorHelp">Fournisseur/marque matériel (128 caractères max).</div>
+      <div class="invalid-feedback" id="vendorFeedback">Veuillez saisir un fournisseur valide.</div>
+      <div class="form-text" id="vendorModelCheck" hidden>Vérification…</div>
     </div>
 
     <div class="col-md-6">
-      <label for="model" class="form-label">Model</label>
+      <label for="model" class="form-label">Modèle</label>
       <input
         type="text"
         class="form-control"
@@ -55,11 +55,11 @@
         title="Letters, numbers, spaces, dot, underscore, hyphen (max 128)"
         aria-describedby="modelFeedback vendorModelCheck"
       />
-      <div class="invalid-feedback" id="modelFeedback">Please enter a valid model.</div>
+      <div class="invalid-feedback" id="modelFeedback">Veuillez saisir un modèle valide.</div>
     </div>
 
     <div class="col-md-6">
-      <label for="kind" class="form-label">Kind</label>
+      <label for="kind" class="form-label">Type</label>
       <input
         list="kindOptions"
         type="text"
@@ -84,12 +84,12 @@
         <option value="weather-station"></option>
         <option value="other"></option>
       </datalist>
-      <div class="form-text" id="kindHelp">Suggested kinds: sensor, gateway, meter, …</div>
-      <div class="invalid-feedback" id="kindFeedback">Please provide a valid kind (lowercase, hyphens allowed).</div>
+      <div class="form-text" id="kindHelp">Types suggérés&nbsp;: sensor, gateway, meter, …</div>
+      <div class="invalid-feedback" id="kindFeedback">Veuillez fournir un type valide (minuscules, tirets autorisés).</div>
     </div>
 
     <div class="col-md-6">
-      <label for="notes" class="form-label">Notes (optional)</label>
+      <label for="notes" class="form-label">Notes (facultatif)</label>
       <input
         type="text"
         class="form-control"
@@ -100,11 +100,11 @@
         maxlength="512"
         aria-describedby="notesHelp"
       />
-      <div class="form-text" id="notesHelp">Any short description or remark.</div>
+      <div class="form-text" id="notesHelp">Toute courte description ou remarque.</div>
     </div>
 
     <div class="col-12">
-      <label for="capabilities" class="form-label">Capabilities (JSON array of strings)</label>
+      <label for="capabilities" class="form-label">Capacités (tableau JSON de chaînes)</label>
       <textarea
         class="form-control font-monospace"
         id="capabilities"
@@ -113,12 +113,12 @@
         placeholder='["temperature","humidity","soil_moisture"]'
         aria-describedby="capHelp capFeedback"
       >{{ request.form.get('capabilities','') }}</textarea>
-      <div class="form-text" id="capHelp">Leave empty or enter a JSON array of strings.</div>
-      <div class="invalid-feedback" id="capFeedback">Must be valid JSON (array of strings).</div>
+      <div class="form-text" id="capHelp">Laissez vide ou saisissez un tableau JSON de chaînes.</div>
+      <div class="invalid-feedback" id="capFeedback">Doit être un JSON valide (tableau de chaînes).</div>
     </div>
 
     <div class="col-12">
-      <label for="payload_schema" class="form-label">Payload Schema (JSON)</label>
+      <label for="payload_schema" class="form-label">Schéma de charge utile (JSON)</label>
       <textarea
         class="form-control font-monospace"
         id="payload_schema"
@@ -127,12 +127,12 @@
         placeholder='{"type":"object","properties":{"t":{"type":"number"}}}'
         aria-describedby="schemaHelp schemaFeedback"
       >{{ request.form.get('payload_schema','') }}</textarea>
-      <div class="form-text" id="schemaHelp">Optional: JSON schema or parsing hints.</div>
-      <div class="invalid-feedback" id="schemaFeedback">Must be valid JSON.</div>
+      <div class="form-text" id="schemaHelp">Optionnel&nbsp;: schéma JSON ou indications d’analyse.</div>
+      <div class="invalid-feedback" id="schemaFeedback">Doit être un JSON valide.</div>
     </div>
 
     <div class="col-12">
-      <label for="defaults_json" class="form-label">Defaults (JSON)</label>
+      <label for="defaults_json" class="form-label">Valeurs par défaut (JSON)</label>
       <textarea
         class="form-control font-monospace"
         id="defaults_json"
@@ -141,14 +141,14 @@
         placeholder='{"units":{"temperature":"°C"},"scaling":{"soil_moisture":0.1}}'
         aria-describedby="defaultsHelp defaultsFeedback"
       >{{ request.form.get('defaults_json','') }}</textarea>
-      <div class="form-text" id="defaultsHelp">Optional: default units, scaling, metadata.</div>
-      <div class="invalid-feedback" id="defaultsFeedback">Must be valid JSON.</div>
+      <div class="form-text" id="defaultsHelp">Optionnel&nbsp;: unités par défaut, mise à l’échelle, métadonnées.</div>
+      <div class="invalid-feedback" id="defaultsFeedback">Doit être un JSON valide.</div>
     </div>
   </div>
 
   <div class="mt-4 d-flex gap-2">
-    <button type="submit" class="btn btn-primary">Add Device Type</button>
-    <a href="{{ url_for('devices.listDevices') }}" class="btn btn-outline-secondary">Cancel</a>
+    <button type="submit" class="btn btn-primary">Ajouter le type d’appareil</button>
+    <a href="{{ url_for('devices.listDevices') }}" class="btn btn-outline-secondary">Annuler</a>
   </div>
 </form>
 
@@ -156,7 +156,7 @@
 
 {% block scripts %}
 <script>
-  // Debounced uniqueness check for (vendor, model)
+  // Vérification différée d’unicité pour (vendor, model)
   const vendorEl = document.getElementById('vendor');
   const modelEl = document.getElementById('model');
   const comboCheckEl = document.getElementById('vendorModelCheck');
@@ -167,7 +167,7 @@
     const model = modelEl.value.trim();
     if (!vendor || !model) { comboCheckEl.hidden = true; return; }
     comboCheckEl.hidden = false;
-    comboCheckEl.textContent = 'Checking…';
+    comboCheckEl.textContent = 'Vérification…';
     clearTimeout(checkTimer);
     checkTimer = setTimeout(async () => {
       try {
@@ -176,16 +176,16 @@
         url.searchParams.set('model', model);
         const r = await fetch(url, {headers: {'Accept': 'application/json'}});
         const data = await r.json();
-        comboCheckEl.textContent = (data.unique === true) ? '✅ Available' : '❌ Already exists';
+        comboCheckEl.textContent = (data.unique === true) ? '✅ Disponible' : '❌ Existe déjà';
       } catch (e) {
-        comboCheckEl.textContent = '⚠️ Could not check';
+        comboCheckEl.textContent = '⚠️ Vérification impossible';
       }
     }, 300);
   }
   vendorEl?.addEventListener('input', checkUnique);
   modelEl?.addEventListener('input', checkUnique);
 
-  // JSON validators
+  // Validateurs JSON
   function isArrayOfStrings(v) {
     return Array.isArray(v) && v.every(x => typeof x === 'string');
   }
@@ -194,18 +194,18 @@
     const fb = document.getElementById(feedbackId);
     function run() {
       const raw = el.value.trim();
-      if (!raw) { el.setCustomValidity(''); return; } // empty is allowed
+      if (!raw) { el.setCustomValidity(''); return; } // vide autorisé
       try {
         const parsed = JSON.parse(raw);
         if (predicate && !predicate(parsed)) {
-          el.setCustomValidity('Invalid shape');
-          fb.textContent = 'Must be a JSON array of strings.'; // specialized message
+          el.setCustomValidity('Forme invalide');
+          fb.textContent = 'Doit être un tableau JSON de chaînes.'; // message spécialisé
         } else {
           el.setCustomValidity('');
         }
       } catch(e) {
-        el.setCustomValidity('Invalid JSON');
-        fb.textContent = 'Invalid JSON syntax.';
+        el.setCustomValidity('JSON invalide');
+        fb.textContent = 'Syntaxe JSON invalide.';
       }
     }
     el?.addEventListener('input', run);
@@ -215,7 +215,7 @@
   validateJSONField('payload_schema', 'schemaFeedback', null);
   validateJSONField('defaults_json', 'defaultsFeedback', null);
 
-  // Bootstrap client-side validation
+  // Validation côté client Bootstrap
   (function () {
     const forms = document.querySelectorAll('.needs-validation');
     Array.prototype.slice.call(forms).forEach(function (form) {

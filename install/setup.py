@@ -111,13 +111,12 @@ def get_crypto_config():
 	while key is None:
 		key = input("Provide your own master key (base64 encoding of a 32 bits key) or leave empty to generate a random one: ").strip().lower()
 		if key == "":
-			key = base64.b64encode(os.urandom(32))
-		else:
-			try:
-				assert(len(base64.b64decode(key.encode())) == 32)
-			except:
-				key = None
-				print('The specified key has the wrong format')
+			key = base64.b64encode(os.urandom(32)).decode()
+		try:
+			assert(len(base64.b64decode(key.encode())) == 32)
+		except:
+			key = None
+			print('The specified key has the wrong format')
 
 	if key_source == "env":
 		print(""" Atention ! Since you've chosen env as key source, the master key will be saved into .env at the root of MqttRelay. 
@@ -206,7 +205,7 @@ def setup(app_paths, args):
 
 	if crypto_config['key_source'] == "env":
 		with open(".env","w") as file:
-			file.write(f"MQTT_RELAY_ENC_KEY_PRIMARY = {crypto_config['key']}")
+			file.write(f"MQTT_RELAY_ENC_KEY_PRIMARY = {crypto_config['key'].decode()}")
 
 	return install_preset_objects(credentials, admin_user, crypto_config)
 

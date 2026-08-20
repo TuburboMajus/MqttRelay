@@ -1,0 +1,154 @@
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-L3S8v8O9Z9C2h5a2k1m7V0c4Yl0y9c9hCqXlJwQf4e7YwV0J7Cq5i7zjQxU5tq0m" crossorigin="anonymous"></script>
+
+<script>
+(function(){
+  const charts = {}; // canvasId -> Chart instance
+
+  function buildUrl(endpoint, params) {
+    const url = new URL(endpoint, window.location.origin);
+    Object.entries(params || {}).forEach(([k,v]) => {
+      if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
+    });
+    return url.toString();
+  }
+
+  function getActiveClientId() {
+    const sel = document.getElementById('clientFilter');
+    return sel ? sel.value : '';
+  }
+
+  function getRangeFor(tabPane) {
+    const globalRange = document.getElementById('rangeSelect')?.value || '';
+    const tabDefault = tabPane.getAttribute('data-default-range') || '';
+    return globalRange || tabDefault || '';
+  }
+
+  async function fetchJSON(url) {
+    const r = await fetch(url, {headers: {'Accept':'application/json'}});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  }
+
+  function parseExtraParams(canvas) {
+    // data-extra format: "param:#selector,other:#sel2"
+    const extra = canvas.getAttribute('data-extra');
+    const out = {};
+    if (!extra) return out;
+    extra.split(',').forEach(pair => {
+      const [k, sel] = pair.split(':');
+      const el = document.querySelector(sel);
+      if (k && el) out[k] = el.value;
+    });
+    return out;
+  }
+
+  function showSpinner(container, show) {
+    const sp = container.querySelector('.chart-spinner');
+    if (sp) sp.style.display = show ? 'inline-block' : 'none';
+  }
+
+  function showError(container, msg) {
+    const e = container.querySelector('.chart-error');
+    if (e) { e.style.display = 'block'; e.textContent = msg; }
+  }
+
+  function hideError(container) {
+    const e = container.querySelector('.chart-error');
+    if (e) e.style.display = 'none';
+  }
+
+  function destroyChart(canvas) {
+    const id = canvas.id || (canvas.id = `cv_${Math.random().toString(36).slice(2)}`);
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  }
+
+  async function loadChart(canvas, tabPane) {
+    const container = canvas.closest('.card-body') || canvas.parentElement;
+    hideError(container);
+    showSpinner(container, true);
+    try {
+      const endpoint = canvas.getAttribute('data-endpoint');
+      const type = canvas.getAttribute('data-type') || 'line';
+      const stacked = canvas.getAttribute('data-stacked') === 'true';
+      const title = canvas.getAttribute('data-title') || '';
+      const params = {
+        client: getActiveClientId(),
+        range: getRangeFor(tabPane),
+        ...parseExtraParams(canvas)
+      };
+      const url = buildUrl(endpoint, params);
+      const payload = await fetchJSON(url);
+
+      // Expect payload as {labels:[], datasets:[...]} or full Chart.js data/options.
+      const data = payload.data || { labels: payload.labels || [], datasets: payload.datasets || [] };
+      const options = Object.assign({
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: stacked ? {
+          x: { stacked: true },
+          y: { stacked: true, beginAtZero: true }
+        } : { y: { beginAtZero: true } },
+        plugins: {
+          title: { display: !!title, text: title },
+          legend: { position: 'bottom' }
+        }
+      }, payload.options || {});
+
+      destroyChart(canvas);
+      const ctx = canvas.getContext('2d');
+      const chart = new Chart(ctx, { type, data, options });
+      charts[canvas.id] = chart;
+    } catch (err) {
+      showError(container, err.message || 'Failed to load chart');
+    } finally {
+      showSpinner(container, false);
+    }
+  }
+
+  async function loadKpis(tabPane) {
+    const kpis = tabPane.querySelectorAll('.kpi');
+    const rangeText = getRangeFor(tabPane);
+    kpis.forEach(async card => {
+      try {
+        const endpoint = card.getAttribute('data-endpoint');
+        const url = buildUrl(endpoint, { client: getActiveClientId(), range: rangeText });
+        const data = await fetchJSON(url); // expect {value: number|string}
+        card.querySelector('.kpi-value').textContent = (data && data.value !== undefined) ? data.value : '--';
+        const kr = card.querySelector('.kpi-range'); if (kr) kr.textContent = rangeText;
+      } catch (e) {
+        card.querySelector('.kpi-value').textContent = '—';
+      }
+    });
+  }
+
+  function loadChartsIn(tabPane) {
+    loadKpis(tabPane);
+    const canvases = tabPane.querySelectorAll('canvas.chart-remote');
+    canvases.forEach(cv => loadChart(cv, tabPane));
+  }
+
+  // Tab events: lazy load & refresh on show
+  document.getElementById('dashboardTabs').addEventListener('shown.bs.tab', (ev) => {
+    const paneId = ev.target.getAttribute('data-bs-target');
+    const pane = document.querySelector(paneId);
+    if (pane) loadChartsIn(pane);
+  });
+
+  // Filters trigger reload for active tab
+  ['clientFilter','rangeSelect','metricSelect'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => {
+      const activePane = document.querySelector('.tab-pane.active.show');
+      if (activePane) loadChartsIn(activePane);
+    });
+  });
+
+  // Initial load: first (critical) tab only
+  document.addEventListener('DOMContentLoaded', () => {
+    const firstPane = document.getElementById('pane-critical');
+    if (firstPane) loadChartsIn(firstPane);
+  });
+})();
+</script>

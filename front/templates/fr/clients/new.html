@@ -1,11 +1,11 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}New Client - MqttRelay{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Nouveau Client - MqttRelay{% endblock %}
 {% block content %}
-<h1 class="mb-4" style="margin-top: 50px;">Add New Client</h1>
+<h1 class="mb-4" style="margin-top: 50px;">Ajouter un nouveau client</h1>
 
 <form method="POST" action="{{ url_for('clients.newClient') }}">
     <div class="mb-3">
-        <label for="slug" class="form-label">Client Slug</label>
+        <label for="slug" class="form-label">Slug du client</label>
         <input 
             type="text" 
             class="form-control" 
@@ -18,10 +18,10 @@
             title="Lowercase letters, numbers, and hyphens only, max 64 characters"
             autofocus
         />
-        <div class="form-text">Unique identifier (lowercase letters, numbers, hyphens, max 64 chars)</div>
+        <div class="form-text">Identifiant unique (lettres minuscules, chiffres, tirets, 64&nbsp;caractères max)</div>
     </div>
     <div class="mb-3">
-        <label for="name" class="form-label">Client Name</label>
+        <label for="name" class="form-label">Nom du client</label>
         <input 
             type="text" 
             class="form-control" 
@@ -32,7 +32,7 @@
         />
     </div>
     <div class="mb-3">
-        <label for="contact_email" class="form-label">Contact Email (optional)</label>
+        <label for="contact_email" class="form-label">Email de contact (facultatif)</label>
         <input 
             type="email" 
             class="form-control" 
@@ -42,13 +42,13 @@
         />
     </div>
     <div class="mb-3">
-        <label for="status" class="form-label">Status</label>
+        <label for="status" class="form-label">Statut</label>
         <select class="form-select" id="status" name="status" required>
-            <option value="active" selected>Active</option>
-            <option value="paused">Paused</option>
-            <option value="disabled">Disabled</option>
+            <option value="active" selected>Actif</option>
+            <option value="paused">En pause</option>
+            <option value="disabled">Désactivé</option>
         </select>
     </div>
-    <button type="submit" class="btn btn-primary">Add Client</button>
+    <button type="submit" class="btn btn-primary">Ajouter le client</button>
 </form>
 {% endblock %}

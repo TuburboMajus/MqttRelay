@@ -33,7 +33,7 @@ def listDestinations(pagination):
 	return AuthenticatedUserTemplate(
 		Path(destinations_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("destinations").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("destinations").render()
 
 
 @destinations_blueprint.route('/client_destination')
@@ -42,18 +42,20 @@ def listDestinations(pagination):
 def newDestination():
 	return AuthenticatedUserTemplate(
 		Path(destinations_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_sidebar("destinations").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("destinations").render()
 
 
 @destinations_blueprint.route('/client_destination',methods=["POST"])
 @login_required
 @body_content('form')
 def createDestination(form):
-	for field in ["capabilities","payload_schema","defaults_json"]:
-		if form.get(field,"") is not None and form.get(field,'').strip() == "":
-			form[field] = None
-	destination = Destination(id=-1, created_at=datetime.now(),**form)
-	Destination.storage.create(destination)
+	if form.get("options_json", ""):
+		if not isinstance(form["options_json"], str):
+			form["options_json"] = json.dumps(form["options_json"])
+	else:
+		form["options_json"] = None
+	destination = ClientDestination(id=-1, created_at=datetime.now(),**form)
+	ClientDestination.storage.create(destination)
 	return redirect(url_for("destinations.listDestinations"))
 
 
@@ -68,7 +70,7 @@ def viewDestination(destination_id):
 	return AuthenticatedUserTemplate(
 		Path(destinations_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
 		destination=destination
-	).handles_success_and_error().with_dictionnary().with_sidebar("destinations").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("destinations").render()
 
 
 @destinations_blueprint.route('/client_destination/<int:destination_id>/example')
@@ -79,9 +81,10 @@ def viewExampleData(destination_id):
 	if destination is None:
 		return abort(404)
 
-	examples = list(Destination.storage.list(Not(Equals(StringAttribute("topic"))),destination_type_id=destination['id']))
-	for example in examples:
-		message = MqttMessage.storage.get(topic=example['topic'])
-		if message is not None:
-			return message['payload']
+	options = destination['options_json']
+	if isinstance(options, str) and options.strip():
+		try:
+			return json.loads(options)
+		except Exception:
+			return options
 	return {}

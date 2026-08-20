@@ -1,11 +1,11 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}MQTT Topics - MqttRelay{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Sujets MQTT - MqttRelay{% endblock %}
 {% block content %}
 
-<h1 class="mb-4" style="margin-top: 50px;">MQTT Topics</h1>
+<h1 class="mb-4" style="margin-top: 50px;">Sujets MQTT</h1>
 
 <a href="{{ url_for('topics.newTopic') }}" class="btn btn-secondary">
-  <i class="bi bi-plus"></i> New Topic
+  <i class="bi bi-plus"></i> Nouveau Sujet
 </a>
 
 <table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
@@ -14,12 +14,12 @@
       <th>ID</th>
       <th>Topic</th>
       <th>Description</th>
-      <th>QoS (default)</th>
-      <th>Status</th>
+      <th>QoS (par défaut)</th>
+      <th>Statut</th>
       <th>Client</th>
-      <th>Device</th>
-      <th>Created</th>
-      <th>Manage</th>
+      <th>Appareil</th>
+      <th>Créé</th>
+      <th>Gérer</th>
     </tr>
   </thead>
   <tbody>
@@ -37,7 +37,7 @@
           class="badge {{ 'bg-success' if topic.active else 'bg-secondary' }}"
           data-active="{{ 1 if topic.active else 0 }}"
         >
-          {{ 'Active' if topic.active else 'Inactive' }}
+          {{ 'Actif' if topic.active else 'Inactif' }}
         </span>
       </td>
       <td>{{ topic.client['name'] or topic.client_id or '—' }}</td>
@@ -70,7 +70,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="9" class="text-center text-muted">No topics found.</td>
+      <td colspan="9" class="text-center text-muted">Aucun sujet trouvé.</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -80,7 +80,7 @@
 
 {% block scripts %}
 <script>
-  // ---- Helpers ----
+  // ---- Aides ----
   const csrfToken = {% if csrf_token %}"{{ csrf_token() }}"{% else %}null{% endif %};
 
   async function apiUpdateActive(topicId, active) {
@@ -114,57 +114,57 @@
   function setBadgeState(topicId, active) {
     const badge = document.getElementById(`badge-${topicId}`);
     if (!badge) return;
-    badge.textContent = active ? 'Active' : 'Inactive';
+    badge.textContent = active ? 'Actif' : 'Inactif';
     badge.dataset.active = active ? '1' : '0';
     badge.classList.toggle('bg-success', !!active);
     badge.classList.toggle('bg-secondary', !active);
   }
 
-  // ---- Toggle handlers ----
+  // ---- Gestionnaires de bascule ----
   document.querySelectorAll('.topic-toggle').forEach((el) => {
     el.addEventListener('change', async (ev) => {
       const checkbox = ev.currentTarget;
       const topicId = checkbox.dataset.topicId;
       const desired = checkbox.checked;
 
-      // Optimistic badge update
+      // Mise à jour optimiste du badge
       setBadgeState(topicId, desired);
       checkbox.disabled = true;
 
       try {
         await apiUpdateActive(topicId, desired);
       } catch (e) {
-        // Rollback on failure
+        // Retour arrière en cas d’échec
         checkbox.checked = !desired;
         setBadgeState(topicId, !desired);
-        alert('Failed to update topic status. Please try again.');
+        alert('Échec de la mise à jour du statut du sujet. Veuillez réessayer.');
       } finally {
         checkbox.disabled = false;
       }
     });
   });
 
-  // ---- Delete handlers ----
+  // ---- Gestionnaires de suppression ----
   document.querySelectorAll('.topic-delete').forEach((btn) => {
     btn.addEventListener('click', async (ev) => {
       const topicId = ev.currentTarget.dataset.topicId;
       const row = document.getElementById(`row-${topicId}`);
 
-      if (!confirm('Are you sure you want to delete this topic? This action cannot be undone.')) {
+      if (!confirm('Êtes-vous sûr de vouloir supprimer ce sujet&nbsp;? Cette action est irréversible.')) {
         return;
       }
 
-      // Disable controls during request
+      // Désactiver les contrôles pendant la requête
       ev.currentTarget.disabled = true;
       const toggle = row?.querySelector('.topic-toggle');
       if (toggle) toggle.disabled = true;
 
       try {
         await apiDeleteTopic(topicId);
-        // Remove row from UI
+        // Retirer la ligne de l’interface
         row?.parentNode?.removeChild(row);
       } catch (e) {
-        alert('Failed to delete topic. Please try again.');
+        alert('Échec de la suppression du sujet. Veuillez réessayer.');
         ev.currentTarget.disabled = false;
         if (toggle) toggle.disabled = false;
       }

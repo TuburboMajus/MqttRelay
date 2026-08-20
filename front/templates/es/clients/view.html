@@ -1,0 +1,209 @@
+{% extends "/common/layouts/base.html" %}
+
+{% block title %}Cliente {{ client['name'] }} - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 id="clientNameHeader" class="mb-4" style="margin-top: 50px;">Cliente: {{ client['name'] }}</h1>
+
+<div id="alertContainer"></div>
+
+<div class="row">
+  <div class="col-md-4">
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <span>Detalles del cliente</span>
+        <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#editClientModal">
+          <i class="bi bi-pencil"></i> Editar
+        </button>
+      </div>
+      <div class="card-body">
+        <p><strong>Correo electrónico:</strong> <span id="clientEmail">{{ client['contact_email'] }}</span></p>
+        <p><strong>Teléfono:</strong> <span id="clientPhone">{{ client.phone or 'N/D' }}</span></p>
+        <p><strong>Alta:</strong> {{ client.created_at.strftime('%Y-%m-%d') }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-info text-white">
+        Panel del cliente
+      </div>
+      <div class="card-body">
+        <div class="row text-center">
+          <div class="col-4">
+            <h5>Total de puntos de datos</h5>
+            <p class="display-5">{{ client_stats['total_messages'] }}</p>
+            <i class="bi bi-clipboard-data text-info fs-2"></i>
+          </div>
+          <div class="col-4">
+            <h5>Último punto de datos</h5>
+            <p class="display-5 relative-time-displayer" data-time="{{ client_stats['lastest_message'] if client_stats['lastest_message'] else '-' }}" title="{{ client_stats['lastest_message'] if client_stats['lastest_message'] else '' }}">{{ '' if client_stats['lastest_message'] else "Sin datos aún" }}</p>
+            <i class="bi bi-clock text-success fs-2"></i>
+          </div>
+          <div class="col-4">
+            <h5>Disponibilidad</h5>
+            <p class="display-5">{{ (client_stats['availability'] or "-").__str__()[:4]+'%' }}</p>
+            <i class="bi bi-receipt text-warning fs-2"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tarjeta de dispositivos -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+        <span>Dispositivos</span>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle" id="devicesTable">
+            <thead>
+              <tr>
+                <th style="width: 80px;">ID</th>
+                <th>Nombre</th>
+                <th>Tipo</th>
+                <th>Último dato</th>
+                <th>Disponibilidad</th>
+                <th class="text-end" style="width: 140px;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for d in devices %}
+              <tr id="device-row-{{ d['id'] }}">
+                <td>#{{ d['id'] }}</td>
+                <td class="dev-name">{{ d['name'] or '-' }}</td>
+                <td class="dev-type">
+                  {% if d['vendor'] %}
+                  <span class="dev-type-label">{{ d['vendor'] }} {{ d['model'] }} ({{ d['kind'] }})</span>
+                  {% else %}
+                  <span class="dev-type-label">Tipo #{{ d['device_type_id'] }}</span>
+                  {% endif %}
+                </td>
+                <td class="dev-ext relative-time-displayer" data-time="{{ client_stats['devices'].get(d['id'],{}).get('last_message') or '-' }}" title="{{ client_stats['devices'].get(d['id'],{}).get('last_message') or '' }}">{{ '' if client_stats['devices'].get(d['id'],{}).get('last_message') else '-' }}</td>
+                <td class="dev-created">{{ (client_stats['devices'].get(d['id'],{}).get('availability') or '-').__str__()[:4]+'%' }}</td>
+                <td class="text-end">
+                  <button
+                    class="btn btn-sm btn-outline-primary view-device-btn me-1"
+                    title="View / Edit device"
+                    data-device-id="{{ d['id'] }}"
+                    data-view-url="{{ url_for('clients.getDevice', client_id=client['id'], device_id=d['id'], json=True) }}"
+                    data-update-url="{{ url_for('clients.editDevice', client_id=client['id'], device_id=d['id']) }}">
+                    <i class="bi bi-eye"></i>
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-danger delete-device-btn"
+                    title="Delete device"
+                    data-device-id="{{ d['id'] }}"
+                    data-delete-url="{{ url_for('clients.deleteDevice', client_id=client['id'], device_id=d['id']) }}">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="6" class="text-center text-muted">Aún no hay dispositivos.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Botón Añadir debajo de la tabla -->
+        <div class="d-flex justify-content-end">
+          <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDeviceModal">
+            <i class="bi bi-plus-circle"></i> Añadir dispositivo
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- /Tarjeta de dispositivos -->
+
+    <!-- Tarjeta de destinos del cliente -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+        <span>Destinos del cliente</span>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle" id="destinationsTable">
+            <thead>
+              <tr>
+                <th style="width:80px;">ID</th>
+                <th>Tipo</th>
+                <th>Destino</th>
+                <th>Activo</th>
+                <th class="text-end" style="width:140px;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for dest in destinations or [] %}
+              <tr id="dest-row-{{ dest['id'] }}">
+                <td>#{{ dest['id'] }}</td>
+                <td class="dest-type">{{ dest['type'].name.lower() }}</td>
+                <td class="dest-target">
+                  {% if dest['type'].name.lower() in ['mysql','postgres'] %}
+                  {{ (dest['host'] or '-') ~ (':' ~ dest['port'] if dest['port'] else '') ~ ('/' ~ dest['database_name'] if dest['database_name'] else '') }}
+                  {% elif dest['type'] in ['http','kafka','file','other'] %}
+                  {{ dest['uri'] or '-' }}
+                  {% else %}
+                  -
+                  {% endif %}
+                </td>
+                <td class="dest-active">
+                  {% if dest['active'] %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+                </td>
+                <td class="text-end">
+                  <button
+                    class="btn btn-sm btn-outline-primary view-dest-btn me-1"
+                    title="View / Edit destination"
+                    data-dest-id="{{ dest['id'] }}"
+                    data-view-url="{{ url_for('clients.getDestination', client_id=client['id'], destination_id=dest['id'], json=True) }}"
+                    data-update-url="{{ url_for('clients.editDestination', client_id=client['id'], destination_id=dest['id']) }}">
+                    <i class="bi bi-eye"></i>
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-danger delete-dest-btn"
+                    title="Delete destination"
+                    data-dest-id="{{ dest['id'] }}"
+                    data-delete-url="{{ url_for('clients.deleteDestination', client_id=client['id'], destination_id=dest['id']) }}">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5" class="text-center text-muted">Aún no hay destinos.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="d-flex justify-content-end">
+          <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDestinationModal">
+            <i class="bi bi-plus-circle"></i> Añadir destino
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- /Tarjeta de destinos del cliente -->
+
+  </div>
+</div>
+
+<a href="{{ url_for('clients.listClients') }}" class="btn btn-secondary">
+  <i class="bi bi-arrow-left"></i> Volver a clientes
+</a>
+
+{% include 'es/clients/dialogs/editClientDialog.html' %}
+{% include 'es/clients/dialogs/addDeviceDialog.html' %}
+{% include 'es/clients/dialogs/editDeviceDialog.html' %}
+{% include 'es/clients/dialogs/addDestinationDialog.html' %}
+{% include 'es/clients/dialogs/editDestinationDialog.html' %}
+
+{% endblock %}
+
+{% block scripts%}
+    {% include 'es/clients/scripts/view.js.html' %}
+{% endblock %}

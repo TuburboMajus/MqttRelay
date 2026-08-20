@@ -1,0 +1,7 @@
+<script type="text/javascript">
+	var reloadWithLanguage = function(lg){
+		let url = new URL(window.location.href)
+		url.searchParams.set("lg",lg)
+		window.location.href = url.toString()
+	}
+</script>

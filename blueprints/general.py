@@ -64,7 +64,7 @@ def settings():
 	return AuthenticatedUserTemplate(
 	Path(general_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("settings.html"),
 	user=current_user['user'], metrics=list(Metric.storage.list())
-).handles_success_and_error().with_dictionnary().with_sidebar("settings").render()
+).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("settings").render()
 
 
 @general_blueprint.route('/crypto', methods=['GET'])

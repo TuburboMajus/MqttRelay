@@ -18,6 +18,8 @@ class User(Entity):
 		{"name":"is_disabled","type":BooleanAttribute,"is_nullable":False,"default_value":False},
 		{"name":"language","type":StringAttribute,"non_empty":True,"is_nullable":False,"default_value":"fr"}
 	]
+
+	UPDATABLE_FIELDS = ['email','password',"language"]
 # ** EndSection ** Entity_User
 
 # ** Section ** Entity_Privilege

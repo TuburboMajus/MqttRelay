@@ -1,20 +1,20 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}Devices - DIGI UP DATA{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Appareils - Mqtt Relay{% endblock %}
 {% block content %}
 
-<h1 class="mb-4" style="margin-top: 50px;">Devices</h1>
+<h1 class="mb-4" style="margin-top: 50px;">Appareils</h1>
 
 <a href="{{ url_for('devices.newDevice') }}" class="btn btn-secondary">
-    <i class="bi bi-plus"></i> New Device
+    <i class="bi bi-plus"></i> Nouvel appareil
 </a>
 
 <table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
     <thead class="table-dark">
         <tr>
             <th>ID</th>
-            <th>Vendor</th>
-            <th>Model</th>
-            <th>Kind</th>
+            <th>Fournisseur</th>
+            <th>Modèle</th>
+            <th>Type</th>
             <th>Actions</th>
         </tr>
     </thead>
@@ -27,13 +27,13 @@
             <td>{{ device['kind'] }}</td>
             <td>
                 <a href="{{ url_for('devices.viewDevice', device_id=device.id) }}" class="btn btn-sm btn-primary">
-                    <i class="bi bi-eye"></i> View
+                    <i class="bi bi-eye"></i> Voir
                 </a>
             </td>
         </tr>
         {% else %}
         <tr>
-            <td colspan="5" class="text-center text-muted">No devices found.</td>
+            <td colspan="5" class="text-center text-muted">Aucun appareil trouvé.</td>
         </tr>
         {% endfor %}
     </tbody>

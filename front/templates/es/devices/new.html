@@ -1,0 +1,230 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Nuevo Tipo de Dispositivo - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top:50px;">Agregar Nuevo Tipo de Dispositivo</h1>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% if msgs %}
+    {% for category, msg in msgs %}
+      <div class="alert alert-{{ 'danger' if category=='error' else category }} alert-dismissible fade show" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('devices.newDevice') }}" class="needs-validation" novalidate>
+  {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label for="vendor" class="form-label">Proveedor</label>
+      <input
+        type="text"
+        class="form-control"
+        id="vendor"
+        name="vendor"
+        placeholder="ej., Dragino, Bosch"
+        value="{{ request.form.get('vendor','') }}"
+        required
+        maxlength="128"
+        pattern="^[A-Za-z0-9 ._\-]{1,128}$"
+        title="Letras, números, espacios, punto, guion bajo, guion (máx 128)"
+        autofocus
+        aria-describedby="vendorHelp vendorFeedback vendorModelCheck"
+      />
+      <div class="form-text" id="vendorHelp">Proveedor/marca de hardware (máx 128 caracteres).</div>
+      <div class="invalid-feedback" id="vendorFeedback">Por favor, introduce un proveedor válido.</div>
+      <div class="form-text" id="vendorModelCheck" hidden>Comprobando…</div>
+    </div>
+
+    <div class="col-md-6">
+      <label for="model" class="form-label">Modelo</label>
+      <input
+        type="text"
+        class="form-control"
+        id="model"
+        name="model"
+        placeholder="ej., LSE01, BME280"
+        value="{{ request.form.get('model','') }}"
+        required
+        maxlength="128"
+        pattern="^[A-Za-z0-9 ._\-]{1,128}$"
+        title="Letras, números, espacios, punto, guion bajo, guion (máx 128)"
+        aria-describedby="modelFeedback vendorModelCheck"
+      />
+      <div class="invalid-feedback" id="modelFeedback">Por favor, introduce un modelo válido.</div>
+    </div>
+
+    <div class="col-md-6">
+      <label for="kind" class="form-label">Tipo</label>
+      <input
+        list="kindOptions"
+        type="text"
+        class="form-control"
+        id="kind"
+        name="kind"
+        placeholder="sensor"
+        value="{{ request.form.get('kind','sensor') }}"
+        required
+        maxlength="64"
+        pattern="^[a-z0-9-]{1,64}$"
+        title="Palabra en minúsculas con guiones, ej., sensor, gateway, meter (máx 64)"
+        aria-describedby="kindHelp kindFeedback"
+      />
+      <datalist id="kindOptions">
+        <option value="sensor"></option>
+        <option value="gateway"></option>
+        <option value="meter"></option>
+        <option value="actuator"></option>
+        <option value="controller"></option>
+        <option value="camera"></option>
+        <option value="weather-station"></option>
+        <option value="other"></option>
+      </datalist>
+      <div class="form-text" id="kindHelp">Tipos sugeridos: sensor, gateway, meter, …</div>
+      <div class="invalid-feedback" id="kindFeedback">Proporcione un tipo válido (minúsculas, guiones permitidos).</div>
+    </div>
+
+    <div class="col-md-6">
+      <label for="notes" class="form-label">Notas (opcional)</label>
+      <input
+        type="text"
+        class="form-control"
+        id="notes"
+        name="notes"
+        placeholder="Notas breves (máx 512)"
+        value="{{ request.form.get('notes','') }}"
+        maxlength="512"
+        aria-describedby="notesHelp"
+      />
+      <div class="form-text" id="notesHelp">Cualquier descripción o comentario breve.</div>
+    </div>
+
+    <div class="col-12">
+      <label for="capabilities" class="form-label">Capacidades (arreglo JSON de cadenas)</label>
+      <textarea
+        class="form-control font-monospace"
+        id="capabilities"
+        name="capabilities"
+        rows="3"
+        placeholder='["temperature","humidity","soil_moisture"]'
+        aria-describedby="capHelp capFeedback"
+      >{{ request.form.get('capabilities','') }}</textarea>
+      <div class="form-text" id="capHelp">Dejar vacío o introducir un arreglo JSON de cadenas.</div>
+      <div class="invalid-feedback" id="capFeedback">Debe ser JSON válido (arreglo de cadenas).</div>
+    </div>
+
+    <div class="col-12">
+      <label for="payload_schema" class="form-label">Esquema de Payload (JSON)</label>
+      <textarea
+        class="form-control font-monospace"
+        id="payload_schema"
+        name="payload_schema"
+        rows="6"
+        placeholder='{"type":"object","properties":{"t":{"type":"number"}}}'
+        aria-describedby="schemaHelp schemaFeedback"
+      >{{ request.form.get('payload_schema','') }}</textarea>
+      <div class="form-text" id="schemaHelp">Opcional: esquema JSON o sugerencias de análisis.</div>
+      <div class="invalid-feedback" id="schemaFeedback">Debe ser JSON válido.</div>
+    </div>
+
+    <div class="col-12">
+      <label for="defaults_json" class="form-label">Valores por Defecto (JSON)</label>
+      <textarea
+        class="form-control font-monospace"
+        id="defaults_json"
+        name="defaults_json"
+        rows="4"
+        placeholder='{"units":{"temperature":"°C"},"scaling":{"soil_moisture":0.1}}'
+        aria-describedby="defaultsHelp defaultsFeedback"
+      >{{ request.form.get('defaults_json','') }}</textarea>
+      <div class="form-text" id="defaultsHelp">Opcional: unidades por defecto, escalado, metadatos.</div>
+      <div class="invalid-feedback" id="defaultsFeedback">Debe ser JSON válido.</div>
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Agregar Tipo de Dispositivo</button>
+    <a href="{{ url_for('devices.listDevices') }}" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Comprobación con retardo de unicidad para (vendor, model)
+  const vendorEl = document.getElementById('vendor');
+  const modelEl = document.getElementById('model');
+  const comboCheckEl = document.getElementById('vendorModelCheck');
+
+  let checkTimer;
+  function checkUnique() {
+    const vendor = vendorEl.value.trim();
+    const model = modelEl.value.trim();
+    if (!vendor || !model) { comboCheckEl.hidden = true; return; }
+    comboCheckEl.hidden = false;
+    comboCheckEl.textContent = 'Comprobando…';
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(async () => {
+      try {
+        const url = new URL('{{ url_for("devices.checkUnique") }}', window.location.origin);
+        url.searchParams.set('vendor', vendor);
+        url.searchParams.set('model', model);
+        const r = await fetch(url, {headers: {'Accept': 'application/json'}});
+        const data = await r.json();
+        comboCheckEl.textContent = (data.unique === true) ? '✅ Disponible' : '❌ Ya existe';
+      } catch (e) {
+        comboCheckEl.textContent = '⚠️ No se pudo comprobar';
+      }
+    }, 300);
+  }
+  vendorEl?.addEventListener('input', checkUnique);
+  modelEl?.addEventListener('input', checkUnique);
+
+  // Validadores de JSON
+  function isArrayOfStrings(v) {
+    return Array.isArray(v) && v.every(x => typeof x === 'string');
+  }
+  function validateJSONField(textareaId, feedbackId, predicate=null) {
+    const el = document.getElementById(textareaId);
+    const fb = document.getElementById(feedbackId);
+    function run() {
+      const raw = el.value.trim();
+      if (!raw) { el.setCustomValidity(''); return; } // vacío es permitido
+      try {
+        const parsed = JSON.parse(raw);
+        if (predicate && !predicate(parsed)) {
+          el.setCustomValidity('Forma inválida');
+          fb.textContent = 'Debe ser un arreglo JSON de cadenas.'; 
+        } else {
+          el.setCustomValidity('');
+        }
+      } catch(e) {
+        el.setCustomValidity('JSON inválido');
+        fb.textContent = 'Sintaxis JSON inválida.';
+      }
+    }
+    el?.addEventListener('input', run);
+    run();
+  }
+  validateJSONField('capabilities', 'capFeedback', isArrayOfStrings);
+  validateJSONField('payload_schema', 'schemaFeedback', null);
+  validateJSONField('defaults_json', 'defaultsFeedback', null);
+
+  // Validación del lado del cliente con Bootstrap
+  (function () {
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(forms).forEach(function (form) {
+      form.addEventListener('submit', function (event) {
+        if (!form.checkValidity()) { event.preventDefault(); event.stopPropagation(); }
+        form.classList.add('was-validated');
+      }, false);
+    });
+  })();
+</script>
+
+{% endblock %}

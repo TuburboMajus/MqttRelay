@@ -72,6 +72,7 @@ def build_app(**app_configuration):
 	app.config.update({k:v for k,v in config['app'].items() if not type(v) is dict})
 	app.config.update({f"MQTT_{k.upper()}":v for k,v in config['mqtt'].items() if not type(v) is dict})
 	app.config['LANGUAGES'] = {language["code"]:language for language in Language.storage.list()}
+	print(app.config['LANGUAGES'])
 	app.config['DICTIONNARY'] = dictionnary
 
 	# ** Section ** Blueprint
@@ -106,7 +107,7 @@ def build_app(**app_configuration):
 	@app.route('/', methods=['GET'])
 	@login_required
 	def home():
-		return redirect(url_for('clients.listClients'))
+		return redirect(url_for('dashboard.dashboard'))
 	# ** EndSection ** AppMainRoutes
 
 	return app

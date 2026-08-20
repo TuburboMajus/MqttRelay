@@ -1,0 +1,549 @@
+htmlCopy code<script>
+// ---------- Aides ----------
+function showAlert(message, variant='success') {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = `
+    <div class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+    </div>`;
+}
+function safeJsonParse(text) {
+  if (!text || !text.trim()) return null;
+  try { return JSON.parse(text); } catch (e) { throw new Error('JSON invalide'); }
+}
+function pretty(obj) {
+  try { return JSON.stringify(obj, null, 2); } catch { return String(obj ?? ''); }
+}
+function boolBadge(v){
+  const truthy = (v===true || v===1 || v==="1" || v==="true" || v==="True");
+  return truthy ? '<span class="badge bg-success"><i class="bi bi-check2"></i> Oui</span>'
+                : '<span class="badge bg-secondary">Non</span>';
+}
+function deviceRowHTMLPartialUpdate(rowEl, device, typeLabel) {
+  if (!rowEl) return;
+  if (device.name !== undefined) rowEl.querySelector('.dev-name').textContent = device.name || '-';
+  if (device.external_ref !== undefined) rowEl.querySelector('.dev-ext').textContent = device.external_ref || '-';
+  if (device.emission_rate_seconds !== undefined || device.emission_rate !== undefined) {
+    const val = device.emission_rate_seconds ?? device.emission_rate ?? '-';
+    rowEl.querySelector('.dev-emit').textContent = (val === null || val === undefined || val === '') ? '-' : val;
+  }
+  if (typeLabel) rowEl.querySelector('.dev-type .dev-type-label').textContent = typeLabel;
+}
+
+// ---------- CSRF & en-têtes ----------
+(function initCommonHeaders(){
+  const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+  const metaVal = metaCsrf ? metaCsrf.getAttribute('content') : "";
+  const jinjaVal = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  const csrfToken = metaVal || jinjaVal || "";
+  window._commonHeaders = { 'Content-Type': 'application/json' };
+  if (csrfToken) window._commonHeaders['X-CSRFToken'] = csrfToken;
+})();
+
+// ---------- Édition du client ----------
+document.getElementById('editClientForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target, btn = document.getElementById('saveEditBtn'), spinner = btn.querySelector('.spinner-border');
+  btn.disabled = true; spinner.classList.remove('d-none');
+  const payload = {
+    id: form.client_id.value,
+    name: form.name.value.trim(),
+    contact_email: form.contact_email.value.trim(),
+    phone: form.phone.value.trim()
+  };
+  const url = "{{ url_for('clients.editClient', client_id=client['id']) }}";
+  try {
+    const res = await fetch(url, { method: 'PUT', headers: window._commonHeaders, body: JSON.stringify(payload) });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    const updated = data.client || payload;
+    document.getElementById('clientNameHeader').textContent = `Client : ${updated.name}`;
+    document.getElementById('clientEmail').textContent = updated.contact_email || '';
+    document.getElementById('clientPhone').textContent = updated.phone || 'N/A';
+    document.title = `Client ${updated.name} - MqttRelay`;
+    (bootstrap.Modal.getInstance(editClientModal) || new bootstrap.Modal(editClientModal)).hide();
+    showAlert('Client mis à jour avec succès.');
+  } catch (err) {
+    showAlert('Échec de la mise à jour du client : ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- Cache des types d’appareil (utilisé pour Ajout et Édition) ----------
+let deviceTypesCache = null;
+async function loadDeviceTypesOnce() {
+  if (deviceTypesCache) return deviceTypesCache;
+  const url = "{{ url_for('devices.listDevices', json=True) }}";
+  const res = await fetch(url, { headers: window._commonHeaders });
+  const data = await res.json().catch(()=> ({}));
+  if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+  const list = data.device_types || data || [];
+  deviceTypesCache = list.map(t => ({
+    id: t.id ?? t['id'],
+    vendor: t.vendor ?? t['vendor'] ?? '',
+    model: t.model ?? t['model'] ?? '',
+    kind: t.kind ?? t['kind'] ?? ''
+  }));
+  return deviceTypesCache;
+}
+function typeLabelFor(id){
+  if (!deviceTypesCache) return null;
+  const t = deviceTypesCache.find(x => String(x.id) === String(id));
+  return t ? `${t.vendor} ${t.model} (${t.kind})` : null;
+}
+
+// ---------- Ajout d’appareil ----------
+const addDeviceModal = document.getElementById('addDeviceModal');
+addDeviceModal.addEventListener('show.bs.modal', async () => {
+  const sel = document.getElementById('device_type_id');
+  if (sel.dataset.loaded === '1') return;
+  try {
+    const types = await loadDeviceTypesOnce();
+    sel.innerHTML = '<option value="" selected disabled>Sélectionnez un type d’appareil</option>' +
+      types.map(t => `<option value="${t.id}">${t.vendor} ${t.model} (${t.kind})</option>`).join('');
+    sel.dataset.loaded = '1';
+  } catch (err) {
+    sel.innerHTML = '<option value="" selected disabled>Échec du chargement des types d’appareils</option>';
+    showAlert('Échec du chargement des types d’appareils : ' + err.message, 'danger');
+  }
+});
+document.getElementById('addDeviceForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target, btn = document.getElementById('saveDeviceBtn'), spinner = btn.querySelector('.spinner-border');
+  btn.disabled = true; spinner.classList.remove('d-none');
+  try {
+    const eraw = form.emission_rate_seconds.value.trim();
+    const payload = {
+      client_id: parseInt(form.client_id.value, 10),
+      device_type_id: parseInt(form.device_type_id.value, 10),
+      name: form.device_name.value.trim(),
+      external_ref: form.external_ref.value.trim(),
+      topic: form.topic.value.trim(),
+      installed: !!form.installed.checked,
+      working: !!form.working.checked,
+      emission_rate: eraw === '' ? null : parseInt(eraw, 10),
+      metadata_json: safeJsonParse(form.metadata_json.value)
+    };
+    const url = "{{ url_for('clients.addDevice', client_id=client['id']) }}";
+    const res = await fetch(url, { method: 'POST', headers: window._commonHeaders, body: JSON.stringify(payload) });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    const device = data.device || data || payload;
+    if (!device.id) device.id = Math.floor(Math.random()*1e9);
+    const tLabel = typeLabelFor(device.device_type_id) || (device.device_type_label || `Type #${device.device_type_id}`);
+    const rowHTML = `
+      <tr id="device-row-${device.id}">
+        <td>#${device.id}</td>
+        <td class="dev-name">${device.name || '-'}</td>
+        <td class="dev-type"><span class="dev-type-label">${tLabel}</span></td>
+        <td class="dev-ext">${device.external_ref || '-'}</td>
+        <td class="dev-emit">${(emitVal === null || emitVal === undefined || emitVal === '') ? '-' : emitVal}</td>
+        <td class="dev-created">${device.created_at ? String(device.created_at).slice(0,10) : '-'}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-primary view-device-btn me-1"
+            title="Voir / Modifier l’appareil"
+            data-device-id="${device.id}"
+            data-view-url="${"{{ url_for('clients.getDevice', client_id=client['id'], device_id=0, json=True) }}".replace('device_id=0','device_id='+device.id)}"
+            data-update-url="${"{{ url_for('clients.editDevice', client_id=client['id'], device_id=0) }}".replace('device_id=0','device_id='+device.id)}">
+            <i class="bi bi-eye"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-danger delete-device-btn" title="Supprimer l’appareil"
+            data-device-id="${device.id}"
+            data-delete-url="${"{{ url_for('clients.deleteDevice', client_id=client['id'], device_id=0) }}".replace('device_id=0','device_id='+device.id)}">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>`;
+    const tbody = document.querySelector('#devicesTable tbody');
+    if (tbody.querySelector('.text-muted')) tbody.innerHTML = '';
+    tbody.insertAdjacentHTML('afterbegin', rowHTML);
+    bindDeleteHandlers(tbody);
+    bindViewHandlers(tbody);
+    (bootstrap.Modal.getInstance(addDeviceModal) || new bootstrap.Modal(addDeviceModal)).hide();
+    form.reset();
+    showAlert('Appareil ajouté avec succès.');
+  } catch (err) {
+    showAlert('Échec de l’ajout de l’appareil : ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- Suppression d’appareil ----------
+function bindDeleteHandlers(root=document) {
+  root.querySelectorAll('.delete-device-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-device-id');
+      const url = btn.getAttribute('data-delete-url');
+      if (!confirm(`Supprimer l’appareil #${id} ? Cette action est irréversible.`)) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch(url, { method: 'DELETE', headers: window._commonHeaders });
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+        const row = document.getElementById(`device-row-${id}`);
+        row?.parentNode?.removeChild(row);
+        const tbody = document.querySelector('#devicesTable tbody');
+        if (tbody && !tbody.querySelector('tr')) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">Aucun appareil pour le moment.</td></tr>`;
+        }
+        showAlert(`Appareil #${id} supprimé avec succès.`);
+      } catch (err) {
+        showAlert('Échec de la suppression de l’appareil : ' + err.message, 'danger');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
+}
+
+// ---------- Afficher/Modifier appareil ----------
+const deviceDetailsModal = document.getElementById('deviceDetailsModal');
+const editDeviceForm = document.getElementById('editDeviceForm');
+
+async function ensureEditTypeSelectLoaded() {
+  const sel = document.getElementById('edf_device_type_id');
+  if (sel.dataset.loaded === '1') return;
+  const types = await loadDeviceTypesOnce();
+  sel.innerHTML = '<option value="" disabled>Sélectionnez un type d’appareil</option>' +
+    types.map(t => `<option value="${t.id}">${t.vendor} ${t.model} (${t.kind})</option>`).join('');
+  sel.dataset.loaded = '1';
+}
+
+function fillDeviceDetails(d){
+  document.getElementById('dd_id').textContent = d.id ?? '';
+  document.getElementById('dd_name').textContent = d.name || '-';
+  const typeStr = d.vendor ? `${d.vendor} ${d.model} (${d.kind})`
+                : (typeLabelFor(d.device_type_id) || `Type #${d.device_type_id}`);
+  document.getElementById('dd_type').textContent = typeStr || '-';
+  document.getElementById('dd_device_type_id').textContent = d.device_type_id ?? (d.device_type && d.device_type.id) ?? '-';
+  document.getElementById('dd_external_ref').textContent = d.external_ref || '-';
+  document.getElementById('dd_topic').textContent = d.topic || '';
+  document.getElementById('dd_installed').innerHTML = boolBadge(d.installed);
+  document.getElementById('dd_working').innerHTML = boolBadge(d.working);
+  document.getElementById('dd_created_at').textContent = d.created_at ? String(d.created_at).slice(0,10) : '-';
+  document.getElementById('dd_metadata').textContent = pretty(d.metadata_json ?? d.metadata ?? null) || '—';
+}
+
+
+function fillEditForm(d, updateUrl){
+  document.getElementById('edf_device_id').value = d.id ?? '';
+  document.getElementById('edf_name').value = d.name || '';
+  document.getElementById('edf_external_ref').value = d.external_ref || '';
+  document.getElementById('edf_topic').value = d.topic || '';
+  document.getElementById('edf_emission_rate_seconds').value = (d.emission_rate_seconds ?? d.emission_rate ?? '') || '';
+  document.getElementById('edf_installed').checked = (d.installed===true || d.installed===1 || d.installed==="1" || d.installed==="true");
+  document.getElementById('edf_working').checked = (d.working===true || d.working===1 || d.working==="1" || d.working==="true");
+  document.getElementById('edf_metadata_json').value = pretty(d.metadata_json ?? d.metadata ?? null);
+  const sel = document.getElementById('edf_device_type_id');
+  sel.value = String(d.device_type_id ?? (d.device_type && d.device_type.id) ?? '');
+  editDeviceForm.dataset.updateUrl = updateUrl;
+}
+
+function bindViewHandlers(root=document){
+  root.querySelectorAll('.view-device-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const viewUrl = btn.getAttribute('data-view-url');
+      const updateUrl = btn.getAttribute('data-update-url');
+      try {
+        await ensureEditTypeSelectLoaded();
+        const res = await fetch(viewUrl, { headers: window._commonHeaders });
+        const data = await res.json().catch(()=> ({}));
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+        const d = data.device || data; // accept both shapes
+        fillDeviceDetails(d);
+        fillEditForm(d, updateUrl);
+        new bootstrap.Modal(deviceDetailsModal).show();
+      } catch (err) {
+        showAlert('Échec du chargement de l’appareil : ' + err.message, 'danger');
+      }
+    };
+  });
+}
+bindViewHandlers(document);
+
+// Enregistrer les modifications
+editDeviceForm.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('edf_saveBtn');
+  const spinner = btn.querySelector('.spinner-border');
+  btn.disabled = true; spinner.classList.remove('d-none');
+
+  try {
+    const eraw = document.getElementById('edf_emission_rate_seconds').value.trim();
+    const payload = {
+      name: document.getElementById('edf_name').value.trim(),
+      device_type_id: parseInt(document.getElementById('edf_device_type_id').value,10),
+      external_ref: document.getElementById('edf_external_ref').value.trim(),
+      topic: document.getElementById('edf_topic').value.trim(),
+      emission_rate: eraw === '' ? null : parseInt(eraw, 10),
+      installed: !!document.getElementById('edf_installed').checked,
+      working: !!document.getElementById('edf_working').checked,
+      metadata_json: safeJsonParse(document.getElementById('edf_metadata_json').value)
+    };
+    const url = editDeviceForm.dataset.updateUrl;
+    const res = await fetch(url, { method: 'PUT', headers: window._commonHeaders, body: JSON.stringify(payload) });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    const updated = data.device || { id: document.getElementById('edf_device_id').value, ...payload };
+    // Mettre à jour le détail du modal et la ligne du tableau
+    fillDeviceDetails(updated);
+    const row = document.getElementById(`device-row-${updated.id}`);
+    const tLabel = typeLabelFor(updated.device_type_id) || `Type #${updated.device_type_id}`;
+    deviceRowHTMLPartialUpdate(row, updated, tLabel);
+
+    showAlert('Appareil mis à jour avec succès.');
+    // Revenir à l’onglet détails
+    document.querySelector('#tab-details').click();
+  } catch (err) {
+    showAlert('Échec de la mise à jour de l’appareil : ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// Liaisons initiales
+bindDeleteHandlers(document);
+</script>
+
+<script>
+// ======= Aides Destinations =======
+function formatDestTarget(d) {
+  console.log(d.type)
+  const t = (d.type || '').toLowerCase();
+  if (t === 'mysql' || t === 'postgres') {
+    const host = d.host || '-';
+    const port = d.port ? `:${d.port}` : '';
+    const db   = d.database_name ? `/${d.database_name}` : '';
+    return `${host}${port}${db}`;
+  }
+  return d.uri || '-';
+}
+function activeBadge(v){
+  const on = (v===true || v===1 || v==="1" || v==="true" || v==="True");
+  return on ? '<span class="badge bg-success">Actif</span>' : '<span class="badge bg-secondary">Inactif</span>';
+}
+function showDbCluster(containerSelector, show){
+  document.querySelectorAll(containerSelector).forEach(el => el.classList.toggle('d-none', !show));
+}
+function showUriCluster(containerSelector, show){
+  document.querySelectorAll(containerSelector).forEach(el => el.classList.toggle('d-none', !show));
+}
+function toggleAddClusters() {
+  const t = (document.getElementById('dest_type').value || '').toLowerCase();
+  const isDb = (t==='mysql' || t==='postgres');
+  const isUri = (t==='http' || t==='kafka' || t==='file' || t==='other');
+  showDbCluster('.db-only', isDb);
+  showUriCluster('.uri-only', isUri);
+}
+function toggleEditClusters() {
+  const t = (document.getElementById('vdf_type').value || '').toLowerCase();
+  const isDb = (t==='mysql' || t==='postgres');
+  const isUri = (t==='http' || t==='kafka' || t==='file' || t==='other');
+  showDbCluster('.db-only-edit', isDb);
+  showUriCluster('.uri-only-edit', isUri);
+}
+document.getElementById('dest_type').addEventListener('change', toggleAddClusters);
+
+// ======= Ajouter une destination =======
+const addDestinationModal = document.getElementById('addDestinationModal');
+document.getElementById('addDestinationForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target, btn = document.getElementById('saveDestinationBtn'), spinner = btn.querySelector('.spinner-border');
+  btn.disabled = true; spinner.classList.remove('d-none');
+
+  try {
+    const payload = {
+      client_id: parseInt(form.client_id.value,10),
+      type: form.dest_type.value,
+      host: form.dest_host.value.trim() || null,
+      port: form.dest_port.value ? parseInt(form.dest_port.value,10) : null,
+      database_name: form.dest_database_name.value.trim() || null,
+      username: form.dest_username.value.trim() || null,
+      password: form.dest_password.value, // texte brut ; le serveur doit chiffrer en password_enc
+      uri: form.dest_uri.value.trim() || null,
+      options_json: safeJsonParse(form.dest_options_json.value),
+      active: !!form.dest_active.checked
+    };
+    const url = "{{ url_for('clients.addDestination', client_id=client['id']) }}";
+    const res = await fetch(url, { method:'POST', headers: window._commonHeaders, body: JSON.stringify(payload) });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    const dest = data.destination || data || payload;
+    if (!dest.id) dest.id = Math.floor(Math.random()*1e9);
+
+    const rowHTML = `
+      <tr id="dest-row-${dest.id}">
+        <td>#${dest.id}</td>
+        <td class="dest-type">${dest.type}</td>
+        <td class="dest-target">${formatDestTarget(dest)}</td>
+        <td class="dest-active">${activeBadge(dest.active)}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-primary view-dest-btn me-1"
+            title="Voir / Modifier la destination"
+            data-dest-id="${dest.id}"
+            data-view-url="${"{{ url_for('clients.getDestination', client_id=client['id'], destination_id=0, json=True) }}".replace('destination_id=0','destination_id='+dest.id)}"
+            data-update-url="${"{{ url_for('clients.editDestination', client_id=client['id'], destination_id=0) }}".replace('destination_id=0','destination_id='+dest.id)}">
+            <i class="bi bi-eye"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-danger delete-dest-btn"
+            title="Supprimer la destination"
+            data-dest-id="${dest.id}"
+            data-delete-url="${"{{ url_for('clients.deleteDestination', client_id=client['id'], destination_id=0) }}".replace('destination_id=0','destination_id='+dest.id)}">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>`;
+
+    const tbody = document.querySelector('#destinationsTable tbody');
+    if (tbody.querySelector('.text-muted')) tbody.innerHTML = '';
+    tbody.insertAdjacentHTML('afterbegin', rowHTML);
+    bindDestinationHandlers(tbody);
+    (bootstrap.Modal.getInstance(addDestinationModal) || new bootstrap.Modal(addDestinationModal)).hide();
+    form.reset();
+    toggleAddClusters();
+    showAlert('Destination ajoutée avec succès.');
+  } catch (err) {
+    showAlert('Échec de l’ajout de la destination : ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ======= Supprimer une destination =======
+function bindDestinationDelete(root=document){
+  root.querySelectorAll('.delete-dest-btn').forEach(btn => {
+    btn.onclick = async ()=>{
+      const id = btn.getAttribute('data-dest-id');
+      const url = btn.getAttribute('data-delete-url');
+      if (!confirm(`Supprimer la destination #${id} ? Cette action est irréversible.`)) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch(url, { method:'DELETE', headers: window._commonHeaders });
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+        document.getElementById(`dest-row-${id}`)?.remove();
+        const tbody = document.querySelector('#destinationsTable tbody');
+        if (tbody && !tbody.querySelector('tr')) {
+          tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">Aucune destination pour le moment.</td></tr>`;
+        }
+        showAlert(`Destination #${id} supprimée avec succès.`);
+      } catch (err) {
+        showAlert('Échec de la suppression de la destination : ' + err.message, 'danger');
+      } finally { btn.disabled = false; }
+    };
+  });
+}
+
+// ======= Voir / Modifier une destination =======
+const destinationDetailsModal = document.getElementById('destinationDetailsModal');
+const editDestinationForm = document.getElementById('editDestinationForm');
+
+function fillDestinationDetails(d){
+  document.getElementById('vd_id').textContent = d.id ?? '';
+  document.getElementById('vd_type').textContent = d.type || '-';
+  document.getElementById('vd_target').textContent = formatDestTarget(d);
+  document.getElementById('vd_active').innerHTML = activeBadge(d.active);
+  document.getElementById('vd_created_at').textContent = d.created_at ? String(d.created_at).slice(0,10) : '-';
+  document.getElementById('vd_options').textContent = pretty(d.options_json ?? d.options ?? null) || '—';
+}
+function fillDestinationEdit(d, updateUrl){
+  document.getElementById('vdf_id').value = d.id ?? '';
+  document.getElementById('vdf_type').value = (d.type || 'other');
+  document.getElementById('vdf_active').checked = !!(d.active===true || d.active===1 || d.active==="1" || d.active==="true");
+
+  document.getElementById('vdf_host').value = d.host || '';
+  document.getElementById('vdf_port').value = (d.port ?? '') || '';
+  document.getElementById('vdf_database_name').value = d.database_name || '';
+  document.getElementById('vdf_username').value = d.username || '';
+  document.getElementById('vdf_password').value = ''; // ne jamais précharger les secrets
+  document.getElementById('vdf_uri').value = d.uri || '';
+  document.getElementById('vdf_options_json').value = pretty(d.options_json ?? d.options ?? null);
+  toggleEditClusters();
+
+  editDestinationForm.dataset.updateUrl = updateUrl;
+}
+document.getElementById('vdf_type').addEventListener('change', toggleEditClusters);
+
+function bindDestinationView(root=document){
+  root.querySelectorAll('.view-dest-btn').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const viewUrl = btn.getAttribute('data-view-url');
+      const updateUrl = btn.getAttribute('data-update-url');
+      try {
+        const res = await fetch(viewUrl, { headers: window._commonHeaders });
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+        const d = data.destination || data;
+        fillDestinationDetails(d);
+        fillDestinationEdit(d, updateUrl);
+        new bootstrap.Modal(destinationDetailsModal).show();
+      } catch (err) {
+        showAlert('Échec du chargement de la destination : ' + err.message, 'danger');
+      }
+    };
+  });
+}
+
+function bindDestinationHandlers(root=document){
+  bindDestinationDelete(root);
+  bindDestinationView(root);
+}
+bindDestinationHandlers(document);
+
+// Enregistrer les modifications
+editDestinationForm.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('vdf_saveBtn');
+  const spinner = btn.querySelector('.spinner-border');
+  btn.disabled = true; spinner.classList.remove('d-none');
+
+  try {
+    const type = document.getElementById('vdf_type').value;
+    const payload = {
+      type,
+      active: !!document.getElementById('vdf_active').checked,
+      host: document.getElementById('vdf_host').value.trim() || null,
+      port: (document.getElementById('vdf_port').value.trim() || '') === '' ? null : parseInt(document.getElementById('vdf_port').value,10),
+      database_name: document.getElementById('vdf_database_name').value.trim() || null,
+      username: document.getElementById('vdf_username').value.trim() || null,
+      // Envoyer le mot de passe uniquement s’il est fourni (le serveur conserve l’existant lorsqu’il est omis/vide)
+      password: document.getElementById('vdf_password').value || undefined,
+      uri: document.getElementById('vdf_uri').value.trim() || null,
+      options_json: safeJsonParse(document.getElementById('vdf_options_json').value)
+    };
+    const url = editDestinationForm.dataset.updateUrl;
+    const res = await fetch(url, { method:'PUT', headers: window._commonHeaders, body: JSON.stringify(payload) });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    const updated = data.destination || { id: document.getElementById('vdf_id').value, ...payload };
+    // Mettre à jour le volet de détails
+    fillDestinationDetails(updated);
+
+    // Mettre à jour la ligne
+    const row = document.getElementById(`dest-row-${updated.id}`);
+    if (row) {
+      if (updated.type !== undefined) row.querySelector('.dest-type').textContent = updated.type || '-';
+      row.querySelector('.dest-target').textContent = formatDestTarget(updated);
+      row.querySelector('.dest-active').innerHTML = activeBadge(updated.active);
+    }
+
+    showAlert('Destination mise à jour avec succès.');
+    document.querySelector('#vd-tab-details').click();
+  } catch (err) {
+    showAlert('Échec de la mise à jour de la destination : ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// Initialiser les groupes pour le modal d’ajout lors de l’ouverture
+addDestinationModal.addEventListener('show.bs.modal', ()=> {
+  toggleAddClusters();
+});
+</script>

@@ -207,8 +207,7 @@ CREATE TABLE metric_catalog (
   id            BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   key_name      VARCHAR(128) NOT NULL UNIQUE,  -- e.g. 'soil_moisture', 'battery'
   default_unit  VARCHAR(32),
-  description   VARCHAR(512),
-  digiupagri_ref varchar(3)
+  description   VARCHAR(512)
 ) ENGINE=InnoDB;
 
 -- Normalized time-series points coming out of parsing

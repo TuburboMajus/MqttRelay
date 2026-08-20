@@ -1,15 +1,15 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}Dashboard - MqttRelay{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Tableau de bord - MqttRelay{% endblock %}
 
 {% block content %}
-<h1 class="mb-4" style="margin-top: 50px;">Operations Dashboard</h1>
+<h1 class="mb-4" style="margin-top: 50px;">Tableau de bord des opérations</h1>
 
-<!-- Filters -->
+<!-- Filtres -->
 <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
   <div>
     <label class="form-label mb-1">Client</label>
     <select id="clientFilter" class="form-select">
-      <option value="">All</option>
+      <option value="">Tous</option>
       {% if clients %}
         {% for c in clients %}
           <option value="{{ c.id }}">{{ c.name }}</option>
@@ -18,47 +18,47 @@
     </select>
   </div>
   <div>
-    <label class="form-label mb-1">Range</label>
+    <label class="form-label mb-1">Plage</label>
     <select id="rangeSelect" class="form-select">
-      <option value="1h">Last 1h</option>
-      <option value="2h" selected>Last 2h</option>
-      <option value="6h">Last 6h</option>
-      <option value="24h">Last 24h</option>
-      <option value="7d">Last 7d</option>
-      <option value="30d">Last 30d</option>
+      <option value="1h">Dernière heure</option>
+      <option value="2h" selected>Dernières 2 h</option>
+      <option value="6h">Dernières 6 h</option>
+      <option value="24h">Dernières 24 h</option>
+      <option value="7d">Derniers 7 j</option>
+      <option value="30d">Derniers 30 j</option>
     </select>
   </div>
 </div>
 
-<!-- Tabs -->
+<!-- Onglets -->
 <ul class="nav nav-tabs" id="dashboardTabs" role="tablist">
   <li class="nav-item" role="presentation">
-    <button class="nav-link active" id="tab-critical" data-bs-toggle="tab" data-bs-target="#pane-critical" type="button" role="tab">Critical insights</button>
+    <button class="nav-link active" id="tab-critical" data-bs-toggle="tab" data-bs-target="#pane-critical" type="button" role="tab">Informations critiques</button>
   </li>
   <li class="nav-item" role="presentation">
     <button class="nav-link" id="tab-ingestion" data-bs-toggle="tab" data-bs-target="#pane-ingestion" type="button" role="tab">Ingestion (MQTT)</button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tab-parsing" data-bs-toggle="tab" data-bs-target="#pane-parsing" type="button" role="tab">Parsing / Extraction</button>
+    <button class="nav-link" id="tab-parsing" data-bs-toggle="tab" data-bs-target="#pane-parsing" type="button" role="tab">Analyse / Extraction</button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tab-quality" data-bs-toggle="tab" data-bs-target="#pane-quality" type="button" role="tab">Quality & Devices</button>
+    <button class="nav-link" id="tab-quality" data-bs-toggle="tab" data-bs-target="#pane-quality" type="button" role="tab">Qualité &amp; Appareils</button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tab-metrics" data-bs-toggle="tab" data-bs-target="#pane-metrics" type="button" role="tab">Business Metrics</button>
+    <button class="nav-link" id="tab-metrics" data-bs-toggle="tab" data-bs-target="#pane-metrics" type="button" role="tab">Métriques métier</button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tab-routing" data-bs-toggle="tab" data-bs-target="#pane-routing" type="button" role="tab">Routing & Dispatch</button>
+    <button class="nav-link" id="tab-routing" data-bs-toggle="tab" data-bs-target="#pane-routing" type="button" role="tab">Routage &amp; Distribution</button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tab-capacity" data-bs-toggle="tab" data-bs-target="#pane-capacity" type="button" role="tab">Capacity & Growth</button>
+    <button class="nav-link" id="tab-capacity" data-bs-toggle="tab" data-bs-target="#pane-capacity" type="button" role="tab">Capacité &amp; Croissance</button>
   </li>
 </ul>
 
 <div class="tab-content pt-3">
 
   <!-- ===================== -->
-  <!-- Critical (Default)    -->
+  <!-- Critique (par défaut) -->
   <!-- ===================== -->
   <div class="tab-pane fade show active" id="pane-critical" role="tabpanel" aria-labelledby="tab-critical" data-default-range="2h">
     <div class="row g-3">
@@ -66,45 +66,45 @@
       <div class="col-6 col-lg-3">
         <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/ingest_rate">
           <div class="card-body">
-            <div class="text-muted">Ingest rate (msg/min)</div>
+            <div class="text-muted">Taux d’ingestion (msg/min)</div>
             <div class="display-6 kpi-value">--</div>
-            <div class="small text-muted">last <span class="kpi-range"></span></div>
+            <div class="small text-muted">sur <span class="kpi-range"></span></div>
           </div>
         </div>
       </div>
       <div class="col-6 col-lg-3">
         <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/parse_success">
           <div class="card-body">
-            <div class="text-muted">Parse success</div>
+            <div class="text-muted">Réussite de l’analyse</div>
             <div class="display-6 kpi-value">--%</div>
-            <div class="small text-muted">last <span class="kpi-range"></span></div>
+            <div class="small text-muted">sur <span class="kpi-range"></span></div>
           </div>
         </div>
       </div>
       <div class="col-6 col-lg-3">
         <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/dispatch_success">
           <div class="card-body">
-            <div class="text-muted">Dispatch success</div>
+            <div class="text-muted">Réussite de l’envoi</div>
             <div class="display-6 kpi-value">--%</div>
-            <div class="small text-muted">last <span class="kpi-range"></span></div>
+            <div class="small text-muted">sur <span class="kpi-range"></span></div>
           </div>
         </div>
       </div>
       <div class="col-6 col-lg-3">
         <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/processing_backlog">
           <div class="card-body">
-            <div class="text-muted">Processing backlog</div>
+            <div class="text-muted">Arriéré de traitement</div>
             <div class="display-6 kpi-value">--</div>
-            <div class="small text-muted">unprocessed msgs</div>
+            <div class="small text-muted">messages non traités</div>
           </div>
         </div>
       </div>
 
-      <!-- Charts -->
+      <!-- Graphiques -->
       <div class="col-12 col-xl-6">
         <div class="card h-100">
           <div class="card-header d-flex justify-content-between align-items-center">
-            <span>Ingest throughput</span>
+            <span>Débit d’ingestion</span>
             <span class="text-muted small">msg/min</span>
           </div>
           <div class="card-body position-relative">
@@ -121,7 +121,7 @@
 
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Dispatch status (stacked)</div>
+          <div class="card-header">Statut d’envoi (empilé)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -145,7 +145,7 @@
     <div class="row g-3">
       <div class="col-12 col-xl-8">
         <div class="card h-100">
-          <div class="card-header">Messages over time (by topic/client)</div>
+          <div class="card-header">Messages dans le temps (par topic/client)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="260"
@@ -159,7 +159,7 @@
       </div>
       <div class="col-12 col-xl-4">
         <div class="card h-100">
-          <div class="card-header">Top topics (24h)</div>
+          <div class="card-header">Sujets principaux (24 h)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="260"
@@ -173,7 +173,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">QoS distribution</div>
+          <div class="card-header">Répartition QoS</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -187,7 +187,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Payload size (histogram)</div>
+          <div class="card-header">Taille de la charge utile (histogramme)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -203,13 +203,13 @@
   </div>
 
   <!-- ===================== -->
-  <!-- Parsing               -->
+  <!-- Analyse               -->
   <!-- ===================== -->
   <div class="tab-pane fade" id="pane-parsing" role="tabpanel" aria-labelledby="tab-parsing" data-default-range="24h">
     <div class="row g-3">
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Parse success vs failure</div>
+          <div class="card-header">Réussites vs échecs d’analyse</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -224,7 +224,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Parse latency (p50/p90/p99)</div>
+          <div class="card-header">Latence d’analyse (p50/p90/p99)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -238,7 +238,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Extracted points per message</div>
+          <div class="card-header">Points extraits par message</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -252,7 +252,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Parser versions share</div>
+          <div class="card-header">Répartition des versions du parseur</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -268,13 +268,13 @@
   </div>
 
   <!-- ===================== -->
-  <!-- Quality & Devices     -->
+  <!-- Qualité & Appareils   -->
   <!-- ===================== -->
   <div class="tab-pane fade" id="pane-quality" role="tabpanel" aria-labelledby="tab-quality" data-default-range="24h">
     <div class="row g-3">
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Latest value age by device (min)</div>
+          <div class="card-header">Âge de la dernière valeur par appareil (min)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="240"
@@ -283,14 +283,14 @@
                     data-title="Latest value age">
             </canvas>
             <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
-            <div class="text-muted small mt-2">Highlights stale/offline devices (higher is worse).</div>
+            <div class="text-muted small mt-2">Met en évidence les appareils obsolètes/hors ligne (plus élevé = pire).</div>
           </div>
         </div>
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Quality mix (good / suspect / bad)</div>
-          <div class="card-body position-relative">
+          <div class="card-header">Mélange de qualité (bon / suspect / mauvais)</div>
+        <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="240"
                     data-type="bar"
@@ -306,16 +306,16 @@
   </div>
 
   <!-- ===================== -->
-  <!-- Business Metrics      -->
+  <!-- Métriques métier      -->
   <!-- ===================== -->
   <div class="tab-pane fade" id="pane-metrics" role="tabpanel" aria-labelledby="tab-metrics" data-default-range="24h">
     <div class="d-flex gap-2 align-items-end mb-2">
       <div>
-        <label class="form-label mb-1">Metric</label>
+        <label class="form-label mb-1">Métrique</label>
         <select id="metricSelect" class="form-select">
-          <option value="soil_moisture">Soil moisture</option>
-          <option value="temperature">Temperature</option>
-          <option value="battery">Battery</option>
+          <option value="soil_moisture">Humidité du sol</option>
+          <option value="temperature">Température</option>
+          <option value="battery">Batterie</option>
           <!-- Add more or populate from backend -->
         </select>
       </div>
@@ -323,7 +323,7 @@
     <div class="row g-3">
       <div class="col-12">
         <div class="card h-100">
-          <div class="card-header">Metric trends</div>
+          <div class="card-header">Tendances de la métrique</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="260"
@@ -338,7 +338,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Top metrics by volume</div>
+          <div class="card-header">Principales métriques par volume</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -352,7 +352,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Per-client metric volume</div>
+          <div class="card-header">Volume de métriques par client</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -368,13 +368,13 @@
   </div>
 
   <!-- ===================== -->
-  <!-- Routing & Dispatch    -->
+  <!-- Routage & Distribution -->
   <!-- ===================== -->
   <div class="tab-pane fade" id="pane-routing" role="tabpanel" aria-labelledby="tab-routing" data-default-range="24h">
     <div class="row g-3">
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Rule hits (top)</div>
+          <div class="card-header">Occurrences de règles (top)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -388,7 +388,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Destination failure rate</div>
+          <div class="card-header">Taux d’échec des destinations</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="220"
@@ -402,7 +402,7 @@
       </div>
       <div class="col-12">
         <div class="card h-100">
-          <div class="card-header">Retries backlog & age</div>
+          <div class="card-header">Arriéré de réessais &amp; âge</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="240"
@@ -418,13 +418,13 @@
   </div>
 
   <!-- ===================== -->
-  <!-- Capacity & Growth     -->
+  <!-- Capacité & Croissance -->
   <!-- ===================== -->
   <div class="tab-pane fade" id="pane-capacity" role="tabpanel" aria-labelledby="tab-capacity" data-default-range="30d">
     <div class="row g-3">
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Storage growth (rows/day)</div>
+          <div class="card-header">Croissance du stockage (lignes/jour)</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="240"
@@ -438,7 +438,7 @@
       </div>
       <div class="col-12 col-xl-6">
         <div class="card h-100">
-          <div class="card-header">Table hot spots</div>
+          <div class="card-header">Points chauds des tables</div>
           <div class="card-body position-relative">
             <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
             <canvas class="chart-remote" height="240"
@@ -557,7 +557,7 @@
       const chart = new Chart(ctx, { type, data, options });
       charts[canvas.id] = chart;
     } catch (err) {
-      showError(container, err.message || 'Failed to load chart');
+      showError(container, err.message || 'Échec du chargement du graphique');
     } finally {
       showSpinner(container, false);
     }

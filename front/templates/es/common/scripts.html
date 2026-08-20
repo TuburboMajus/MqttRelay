@@ -1,0 +1,31 @@
+<script type="text/javascript">
+  function formatRelativeTime(dom) {
+    const date = new Date(dom.dataset.time);
+    if (isNaN(date.getTime())) return; // fecha inválida
+
+    const diff = (new Date() - date) / 1000; // segundos
+
+    if (diff >= 2 * 24 * 3600) {
+      dom.textContent = dom.dataset.time; // muestra la fecha original
+    } else if (diff >= 24 * 3600) {
+      dom.textContent = "Hier";
+    } else if (diff >= 3600) {
+      dom.textContent = `Il y a ${Math.floor(diff / 3600)}h`;
+    } else if (diff >= 60) {
+      dom.textContent = `Il y a ${Math.floor(diff / 60)} min`;
+    } else {
+      dom.textContent = `Il y a moins d'une minute`;
+    }
+  }
+
+  function refreshRelativeTimes() {
+    document.querySelectorAll('.relative-time-displayer')
+      .forEach(formatRelativeTime);
+  }
+
+  // inicial
+  refreshRelativeTimes();
+
+  // opcional: refrescar cada minuto
+  setInterval(refreshRelativeTimes, 60 * 1000);
+</script>

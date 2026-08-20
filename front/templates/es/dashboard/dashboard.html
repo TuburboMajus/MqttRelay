@@ -1,0 +1,357 @@
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Panel - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">Panel de Operaciones</h1>
+
+<!-- Filters -->
+<div class="d-flex flex-wrap gap-3 align-items-end mb-3">
+  <div>
+    <label class="form-label mb-1">Cliente</label>
+    <select id="clientFilter" class="form-select">
+      <option value="">Todos</option>
+      {% if clients %}
+        {% for c in clients %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      {% endif %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label mb-1">Rango</label>
+    <select id="rangeSelect" class="form-select">
+      <option value="1h">Última 1h</option>
+      <option value="2h" selected>Últimas 2h</option>
+      <option value="6h">Últimas 6h</option>
+      <option value="24h">Últimas 24h</option>
+      <option value="7d">Últimos 7d</option>
+      <option value="30d">Últimos 30d</option>
+    </select>
+  </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs" id="dashboardTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-critical" data-bs-toggle="tab" data-bs-target="#pane-critical" type="button" role="tab">Perspectivas críticas</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-ingestion" data-bs-toggle="tab" data-bs-target="#pane-ingestion" type="button" role="tab">Ingesta (MQTT)</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-parsing" data-bs-toggle="tab" data-bs-target="#pane-parsing" type="button" role="tab">Análisis / Extracción</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-quality" data-bs-toggle="tab" data-bs-target="#pane-quality" type="button" role="tab">Calidad & Dispositivos</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-metrics" data-bs-toggle="tab" data-bs-target="#pane-metrics" type="button" role="tab">Métricas de negocio</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-routing" data-bs-toggle="tab" data-bs-target="#pane-routing" type="button" role="tab">Enrutamiento & Despacho</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-capacity" data-bs-toggle="tab" data-bs-target="#pane-capacity" type="button" role="tab">Capacidad & Crecimiento</button>
+  </li>
+</ul>
+
+<div class="tab-content pt-3">
+
+  <!-- ===================== -->
+  <!-- Critical (Default)    -->
+  <!-- ===================== -->
+  <div class="tab-pane fade show active" id="pane-critical" role="tabpanel" aria-labelledby="tab-critical" data-default-range="2h">
+    <div class="row g-3">
+      <!-- KPIs -->
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/ingest_rate">
+          <div class="card-body">
+            <div class="text-muted">Tasa de ingesta (msg/min)</div>
+            <div class="display-6 kpi-value">--</div>
+            <div class="small text-muted">últimas <span class="kpi-range"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/parse_success">
+          <div class="card-body">
+            <div class="text-muted">Éxito de análisis</div>
+            <div class="display-6 kpi-value">--%</div>
+            <div class="small text-muted">últimas <span class="kpi-range"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/dispatch_success">
+          <div class="card-body">
+            <div class="text-muted">Éxito de despacho</div>
+            <div class="display-6 kpi-value">--%</div>
+            <div class="small text-muted">últimas <span class="kpi-range"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="card h-100 kpi" data-endpoint="/dashboard/api/critical/processing_backlog">
+          <div class="card-body">
+            <div class="text-muted">Cola de procesamiento</div>
+            <div class="display-6 kpi-value">--</div>
+            <div class="small text-muted">mensajes no procesados</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Rendimiento de ingesta</span>
+            <span class="text-muted small">msg/min</span>
+          </div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="line"
+                    data-endpoint="/dashboard/api/critical/throughput_series"
+                    data-title="Rendimiento de ingesta">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Estado de despacho (apilado)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-stacked="true"
+                    data-endpoint="/dashboard/api/critical/dispatch_series"
+                    data-title="Estado de despacho">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Ingestion             -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-ingestion" role="tabpanel" aria-labelledby="tab-ingestion" data-default-range="24h">
+    <div class="row g-3">
+      <div class="col-12 col-xl-8">
+        <div class="card h-100">
+          <div class="card-header">Mensajes en el tiempo (por tema/cliente)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="260"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/ingest/messages_over_time"
+                    data-title="Mensajes en el tiempo">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-4">
+        <div class="card h-100">
+          <div class="card-header">Temas principales (24h)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="260"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/ingest/top_topics"
+                    data-title="Temas principales">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Distribución QoS</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="doughnut"
+                    data-endpoint="/api/dashboard/ingest/qos_distribution"
+                    data-title="Distribución QoS">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Tamaño de carga útil (histograma)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/ingest/payload_size_hist"
+                    data-title="Tamaño de carga útil">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Parsing               -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-parsing" role="tabpanel" aria-labelledby="tab-parsing" data-default-range="24h">
+    <div class="row g-3">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Éxito vs fallo de análisis</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-stacked="true"
+                    data-endpoint="/api/dashboard/parse/success_series"
+                    data-title="Éxito vs fallo de análisis">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Latencia de análisis (p50/p90/p99)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/parse/latency_percentiles"
+                    data-title="Latencia">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Puntos extraídos por mensaje</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/parse/extracted_per_message"
+                    data-title="Extraídos por mensaje">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Participación de versiones de analizador</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/parse/parser_versions"
+                    data-title="Versiones de analizador">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Quality & Devices     -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-quality" role="tabpanel" aria-labelledby="tab-quality" data-default-range="24h">
+    <div class="row g-3">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Antigüedad del último valor por dispositivo (min)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="240"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/quality/latest_age_by_device"
+                    data-title="Antigüedad del último valor">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+            <div class="text-muted small mt-2">Resalta dispositivos obsoletos/fuera de línea (más alto es peor).</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Mezcla de calidad (buena / sospechosa / mala)</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="240"
+                    data-type="bar"
+                    data-stacked="true"
+                    data-endpoint="/api/dashboard/quality/mix_over_time"
+                    data-title="Mezcla de calidad">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- Business Metrics      -->
+  <!-- ===================== -->
+  <div class="tab-pane fade" id="pane-metrics" role="tabpanel" aria-labelledby="tab-metrics" data-default-range="24h">
+    <div class="d-flex gap-2 align-items-end mb-2">
+      <div>
+        <label class="form-label mb-1">Métrica</label>
+        <select id="metricSelect" class="form-select">
+          <option value="soil_moisture">Humedad del suelo</option>
+          <option value="temperature">Temperatura</option>
+          <option value="battery">Batería</option>
+          <!-- Agregar más o poblar desde backend -->
+        </select>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-12">
+        <div class="card h-100">
+          <div class="card-header">Tendencias de métricas</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="260"
+                    data-type="line"
+                    data-endpoint="/api/dashboard/metrics/trends"
+                    data-title="Tendencias de métricas"
+                    data-extra="metric:#metricSelect">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Métricas principales por volumen</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;top:45%;left:48%;display:none;"></div>
+            <canvas class="chart-remote" height="220"
+                    data-type="bar"
+                    data-endpoint="/api/dashboard/metrics/top_by_volume"
+                    data-title="Métricas principales por volumen">
+            </canvas>
+            <div class="text-danger small mt-2 chart-error" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100">
+          <div class="card-header">Volumen de métricas por cliente</div>
+          <div class="card-body position-relative">
+            <div class="spinner-border chart-spinner" role="status" style="position:absolute;

@@ -1,0 +1,142 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Regla de Enrutamiento #{{ rule.id }} - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">
+  Regla de Enrutamiento <small class="text-muted">#{{ rule.id }}</small>
+</h1>
+
+<div id="alertContainer"></div>
+
+<a href="{{ url_for('routes.listRoutingRules') }}" class="btn btn-outline-secondary mb-3">
+  <i class="bi bi-arrow-left"></i> Volver a Reglas
+</a>
+
+<ul class="nav nav-tabs" id="routeTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="details-tab" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab" aria-controls="tab-details" aria-selected="true">
+      Detalles
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="graph-tab" data-bs-toggle="tab" data-bs-target="#tab-graph" type="button" role="tab" aria-controls="tab-graph" aria-selected="false">
+      Gráfico
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content mt-3" id="routeTabsContent">
+  <!-- ===== TAB: DETAILS ===== -->
+  <div class="tab-pane fade show active" id="tab-details" role="tabpanel" aria-labelledby="details-tab">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <span>Regla de Enrutamiento</span>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#editRouteModal">
+            <i class="bi bi-pencil"></i> Editar
+          </button>
+          <button id="deleteRuleBtn" class="btn btn-sm btn-danger">
+            <i class="bi bi-trash"></i> Eliminar
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <p class="mb-1"><strong>ID:</strong> <span id="v_id">{{ rule.id }}</span></p>
+            <p class="mb-1">
+              <strong>Estado:</strong>
+              {% if rule.active %}
+                <span id="v_active" class="badge bg-success">Activo</span>
+              {% else %}
+                <span id="v_active" class="badge bg-secondary">Inactivo</span>
+              {% endif %}
+            </p>
+            <p class="mb-1"><strong>Prioridad:</strong> <span id="v_priority">{{ rule.priority }}</span></p>
+            <p class="mb-1"><strong>Creado:</strong> <span id="v_created">{{ rule.created_at.strftime('%Y-%m-%d') if rule.created_at else '—' }}</span></p>
+          </div>
+
+          <div class="col-md-8">
+            <div class="row">
+              <div class="col-md-6">
+                <p class="mb-1"><strong>Cliente:</strong> <span id="v_client">{{ rule.client_name or rule.client_id }}</span></p>
+                <p class="mb-1"><strong>Tópico:</strong> <span id="v_topic">{{ rule.topic_string or rule.topic_id or '—' }}</span></p>
+              </div>
+              <div class="col-md-6">
+                <p class="mb-1"><strong>Dispositivo:</strong> <span id="v_device">{{ rule.device_label or rule.device_id or '—' }}</span></p>
+                <p class="mb-1"><strong>Parser:</strong> <span id="v_parser">{{ rule.parser_name or rule.parser_id or '—' }}</span></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- JSON: parser_config -->
+          <div class="col-12 mt-2">
+            <div class="d-flex justify-content-between align-items-center">
+              <strong class="mb-2">Configuración del Parser (JSON)</strong>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="copyParserConfigBtn">
+                <i class="bi bi-clipboard"></i> Copiar
+              </button>
+            </div>
+            <pre id="v_parser_config" class="bg-light p-3 rounded small mb-0" style="max-height: 300px; overflow:auto;">{{ rule.parser_config|tojson(indent=2) if rule.parser_config else '—' }}</pre>
+          </div>
+
+          <!-- JSON: conditions -->
+          <div class="col-12 mt-4">
+            <div class="d-flex justify-content-between align-items-center">
+              <strong class="mb-2">Condiciones (mongo_dsl JSON)</strong>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="copyConditionsBtn">
+                <i class="bi bi-clipboard"></i> Copiar
+              </button>
+            </div>
+            <pre id="v_conditions" class="bg-light p-3 rounded small mb-0" style="max-height: 300px; overflow:auto;">{{ rule.conditions|tojson(indent=2) if rule.conditions else '—' }}</pre>
+          </div>
+
+          <!-- Destinations -->
+          <div class="col-12 mt-4">
+            <strong class="mb-2 d-block">Destinos</strong>
+            {% if destinations and destinations|length > 0 %}
+              <ul id="v_destinations" class="list-group">
+                {% for d in destinations %}
+                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>
+                      <span class="badge bg-secondary me-2">{{ d.type.name|upper }}</span>
+                      {{ d.client_destination.to_dict() or d.id }}
+                    </span>
+                    <span class="text-muted small">#{{ d.id }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div id="v_destinations_empty" class="text-muted">—</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB: GRAPH (placeholder) ===== -->
+  <div class="tab-pane fade" id="tab-graph" role="tabpanel" aria-labelledby="graph-tab">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-primary text-white">
+        Gráfico de la Ruta
+      </div>
+      <div class="card-body">
+        <!-- Intentionally left blank; populate later -->
+        <div id="routeGraph" style="min-height: 360px;" class="text-muted d-flex align-items-center justify-content-center">
+          (El gráfico se mostrará aquí)
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include 'es/routes/dialogs/editRuleDialog.html' %}
+
+{% endblock %}
+
+{% block scripts %}
+
+{% include 'es/routes/scripts/view.js.html' %}
+
+{% endblock %}

@@ -1,0 +1,94 @@
+<!-- View / Edit Device Modal -->
+<div class="modal fade" id="deviceDetailsModal" tabindex="-1" aria-labelledby="deviceDetailsLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deviceDetailsLabel">Device #<span id="dd_id"></span> – <span id="dd_name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-details" data-bs-toggle="tab" data-bs-target="#pane-details" type="button" role="tab">Details</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-edit" data-bs-toggle="tab" data-bs-target="#pane-edit" type="button" role="tab">Edit</button>
+          </li>
+        </ul>
+        <div class="tab-content pt-3">
+          <!-- Details pane -->
+          <div class="tab-pane fade show active" id="pane-details" role="tabpanel" aria-labelledby="tab-details">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div><strong>Type:</strong> <span id="dd_type"></span></div>
+                <div><strong>Device Type ID:</strong> <span id="dd_device_type_id"></span></div>
+                <div><strong>External Ref:</strong> <span id="dd_external_ref"></span></div>
+                <div><strong>Topic:</strong> <code id="dd_topic"></code></div>
+                <div><strong>Emission Rate (s):</strong> <span id="dd_emission_rate_seconds"></span></div>
+              </div>
+              <div class="col-md-6">
+                <div><strong>Installed:</strong> <span id="dd_installed"></span></div>
+                <div><strong>Working:</strong> <span id="dd_working"></span></div>
+                <div><strong>Created:</strong> <span id="dd_created_at"></span></div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Metadata</label>
+                <pre class="bg-light p-3 rounded small mb-0" id="dd_metadata" style="max-height: 240px; overflow:auto;">—</pre>
+              </div>
+            </div>
+          </div>
+          <!-- Edit pane -->
+          <div class="tab-pane fade" id="pane-edit" role="tabpanel" aria-labelledby="tab-edit">
+            <form id="editDeviceForm">
+              <input type="hidden" id="edf_device_id">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label" for="edf_device_type_id">Device Type</label>
+                  <select id="edf_device_type_id" class="form-select" required>
+                    <option value="" selected disabled>Loading device types…</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="edf_name">Name</label>
+                  <input id="edf_name" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="edf_external_ref">External Ref</label>
+                  <input id="edf_external_ref" class="form-control">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="edf_topic">Topic</label>
+                  <input id="edf_topic" class="form-control" placeholder="sensors/field-1/...">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="edf_emission_rate_seconds">Emission Rate (seconds)</label>
+                  <input type="number" min="0" step="1" id="edf_emission_rate_seconds" class="form-control" placeholder="e.g., 300">
+                </div>
+                <div class="col-md-6 d-flex align-items-center">
+                  <div class="form-check me-4">
+                    <input class="form-check-input" type="checkbox" id="edf_installed">
+                    <label class="form-check-label" for="edf_installed">Installed</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="edf_working">
+                    <label class="form-check-label" for="edf_working">Working</label>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="edf_metadata_json">Metadata (JSON)</label>
+                  <textarea id="edf_metadata_json" class="form-control" rows="6" placeholder='{"location":"north field"}'></textarea>
+                </div>
+              </div>
+              <div class="mt-3 d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary" id="edf_saveBtn">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div> <!-- /tab-content -->
+      </div>
+    </div>
+  </div>
+</div>

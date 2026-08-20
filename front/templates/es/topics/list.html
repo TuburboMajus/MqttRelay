@@ -1,0 +1,174 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Tópicos MQTT - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top: 50px;">Tópicos MQTT</h1>
+
+<a href="{{ url_for('topics.newTopic') }}" class="btn btn-secondary">
+  <i class="bi bi-plus"></i> Nuevo Tópico
+</a>
+
+<table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
+  <thead class="table-dark">
+    <tr>
+      <th>ID</th>
+      <th>Tópico</th>
+      <th>Descripción</th>
+      <th>QoS (por defecto)</th>
+      <th>Estado</th>
+      <th>Cliente</th>
+      <th>Dispositivo</th>
+      <th>Creado</th>
+      <th>Gestionar</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for topic in pagination.current %}
+    <tr id="row-{{ topic.id }}">
+      <td>{{ topic.id }}</td>
+      <td class="text-monospace">{{ topic.topic }}</td>
+      <td class="text-truncate" style="max-width: 24rem;">
+        {{ topic.description or '—' }}
+      </td>
+      <td>{{ topic.qos_default if topic.qos_default is not none else 0 }}</td>
+      <td>
+        <span
+          id="badge-{{ topic.id }}"
+          class="badge {{ 'bg-success' if topic.active else 'bg-secondary' }}"
+          data-active="{{ 1 if topic.active else 0 }}"
+        >
+          {{ 'Activo' if topic.active else 'Inactivo' }}
+        </span>
+      </td>
+      <td>{{ topic.client['name'] or topic.client_id or '—' }}</td>
+      <td>{{ topic.device['name'] or topic.device_id or '—' }}</td>
+      <td>{{ topic.created_at.strftime('%Y-%m-%d') }}</td>
+      <td class="d-flex gap-2">
+        <!-- Activar / Desactivar switch -->
+        <div class="form-check form-switch m-0">
+          <input
+            class="form-check-input topic-toggle"
+            type="checkbox"
+            role="switch"
+            id="toggle-{{ topic.id }}"
+            data-topic-id="{{ topic.id }}"
+            {{ 'checked' if topic.active else '' }}
+            aria-label="Activar o desactivar tópico {{ topic.id }}"
+          >
+        </div>
+        <!-- Botón eliminar -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger topic-delete"
+          data-topic-id="{{ topic.id }}"
+          aria-label="Eliminar tópico {{ topic.id }}"
+          title="Eliminar tópico"
+        >
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="9" class="text-center text-muted">No se encontraron tópicos.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ---- Helpers ----
+  const csrfToken = {% if csrf_token %}"{{ csrf_token() }}"{% else %}null{% endif %};
+
+  async function apiUpdateActive(topicId, active) {
+    const url = `/topic/${encodeURIComponent(topicId)}`;
+    const r = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...(csrfToken ? {'X-CSRFToken': csrfToken} : {})
+      },
+      body: JSON.stringify({ active: !!active })
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json().catch(() => ({}));
+  }
+
+  async function apiDeleteTopic(topicId) {
+    const url = `/topic/${encodeURIComponent(topicId)}`;
+    const r = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json',
+        ...(csrfToken ? {'X-CSRFToken': csrfToken} : {})
+      }
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json().catch(() => ({}));
+  }
+
+  function setBadgeState(topicId, active) {
+    const badge = document.getElementById(`badge-${topicId}`);
+    if (!badge) return;
+    badge.textContent = active ? 'Activo' : 'Inactivo';
+    badge.dataset.active = active ? '1' : '0';
+    badge.classList.toggle('bg-success', !!active);
+    badge.classList.toggle('bg-secondary', !active);
+  }
+
+  // ---- Toggle handlers ----
+  document.querySelectorAll('.topic-toggle').forEach((el) => {
+    el.addEventListener('change', async (ev) => {
+      const checkbox = ev.currentTarget;
+      const topicId = checkbox.dataset.topicId;
+      const desired = checkbox.checked;
+
+      // Actualización optimista de badge
+      setBadgeState(topicId, desired);
+      checkbox.disabled = true;
+
+      try {
+        await apiUpdateActive(topicId, desired);
+      } catch (e) {
+        // Revertir en caso de error
+        checkbox.checked = !desired;
+        setBadgeState(topicId, !desired);
+        alert('No se pudo actualizar el estado del tópico. Inténtalo de nuevo.');
+      } finally {
+        checkbox.disabled = false;
+      }
+    });
+  });
+
+  // ---- Delete handlers ----
+  document.querySelectorAll('.topic-delete').forEach((btn) => {
+    btn.addEventListener('click', async (ev) => {
+      const topicId = ev.currentTarget.dataset.topicId;
+      const row = document.getElementById(`row-${topicId}`);
+
+      if (!confirm('¿Estás seguro de que deseas eliminar este tópico? Esta acción no se puede deshacer.')) {
+        return;
+      }
+
+      // Deshabilitar controles durante la solicitud
+      ev.currentTarget.disabled = true;
+      const toggle = row?.querySelector('.topic-toggle');
+      if (toggle) toggle.disabled = true;
+
+      try {
+        await apiDeleteTopic(topicId);
+        // Eliminar fila de la UI
+        row?.parentNode?.removeChild(row);
+      } catch (e) {
+        alert('No se pudo eliminar el tópico. Inténtalo de nuevo.');
+        ev.currentTarget.disabled = false;
+        if (toggle) toggle.disabled = false;
+      }
+    });
+  });
+</script>
+{% endblock %}

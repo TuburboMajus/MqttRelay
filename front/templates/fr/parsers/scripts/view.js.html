@@ -1,0 +1,439 @@
+htmlCopy code<script>
+// ---------- Helpers ----------
+function showAlert(message, variant='success') {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = `
+    <div class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>`;
+}
+function safeJsonParse(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  try { return JSON.parse(t); } catch(e) { throw new Error('Invalid JSON'); }
+}
+function pretty(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj ?? ''); } }
+
+// ---------- CSRF & headers ----------
+(function initCommonHeaders(){
+  const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+  const metaVal = metaCsrf ? metaCsrf.getAttribute('content') : "";
+  const jinjaVal = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  const csrfToken = metaVal || jinjaVal || "";
+  window._commonHeaders = { 'Content-Type': 'application/json' };
+  if (csrfToken) window._commonHeaders['X-CSRFToken'] = csrfToken;
+})();
+
+// ---------- Copy schema ----------
+document.getElementById('copySchemaBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_config_schema').innerText;
+  try {
+    await navigator.clipboard.writeText(txt);
+    showAlert('Schéma de configuration copié dans le presse-papiers.');
+  } catch {
+    showAlert('Échec de la copie dans le presse-papiers.', 'danger');
+  }
+});
+
+// ---------- Delete parser ----------
+document.getElementById('deleteParserBtn').addEventListener('click', async () => {
+  if (!confirm('Supprimer ce parseur de façon définitive ? Cette action est irréversible.')) return;
+  const btn = document.getElementById('deleteParserBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch("{{ url_for('parsers.deleteParser', parser_id=parser['id']) }}", {
+      method: 'DELETE',
+      headers: window._commonHeaders
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    showAlert('Parseur supprimé. Redirection…');
+    setTimeout(() => { window.location.href = "{{ url_for('parsers.listParsers') }}"; }, 600);
+  } catch (err) {
+    btn.disabled = false;
+    showAlert('Échec de la suppression du parseur : ' + err.message, 'danger');
+  }
+});
+
+// ---------- Edit modal behavior ----------
+(() => {
+  const form = document.getElementById('editParserForm');
+  const btn = document.getElementById('saveEditBtn');
+  const spinner = btn.querySelector('.spinner-border');
+  const nameEl = document.getElementById('e_name');
+  const versionEl = document.getElementById('e_version');
+  const cfgEl = document.getElementById('e_config_schema');
+  const statusEl = document.getElementById('jsonStatus');
+
+  // live sanitization
+  nameEl.addEventListener('input', () => {
+    const cleaned = nameEl.value.replace(/[^A-Za-z0-9 ]+/g, '');
+    if (cleaned !== nameEl.value) nameEl.value = cleaned;
+    nameEl.value = nameEl.value.replace(/\s{2,}/g, ' ');
+  });
+  versionEl.addEventListener('input', () => {
+    const cleaned = versionEl.value.replace(/[^0-9.]/g, '');
+    if (cleaned !== versionEl.value) versionEl.value = cleaned;
+  });
+
+  // format JSON
+  document.getElementById('btnFormatJson').addEventListener('click', () => {
+    const txt = cfgEl.value.trim();
+    if (!txt) return;
+    try {
+      const obj = JSON.parse(txt);
+      cfgEl.value = JSON.stringify(obj, null, 2);
+      statusEl.textContent = 'Formaté ✓';
+      statusEl.className = 'ms-2 small text-success';
+    } catch {
+      statusEl.textContent = 'JSON invalide ✗';
+      statusEl.className = 'ms-2 small text-danger';
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // client-side patterns
+    nameEl.value = nameEl.value.trim().replace(/\s{2,}/g, ' ');
+    versionEl.value = versionEl.value.trim();
+
+    // validate JSON
+    let schemaObj = null;
+    try {
+      schemaObj = safeJsonParse(cfgEl.value);
+      if (schemaObj) {
+        statusEl.textContent = 'Le JSON semble valide ✓';
+        statusEl.className = 'ms-2 small text-success';
+      } else {
+        statusEl.textContent = '';
+        statusEl.className = 'ms-2 small text-muted';
+      }
+    } catch (err) {
+      statusEl.textContent = 'JSON invalide ✗';
+      statusEl.className = 'ms-2 small text-danger';
+      form.classList.add('was-validated');
+      return;
+    }
+
+    if (!form.checkValidity()) {
+      form.classList.add('was-validated');
+      return;
+    }
+
+    const payload = {
+      name: nameEl.value,
+      version: versionEl.value,
+      language: document.getElementById('e_language').value || null,
+      description: document.getElementById('e_description').value || null,
+      config_schema: schemaObj,        // send as JSON object
+      active: !!document.getElementById('e_active').checked
+    };
+
+    btn.disabled = true; spinner.classList.remove('d-none');
+    try {
+      const res = await fetch("{{ url_for('parsers.editParser', parser_id=parser['id']) }}", {
+        method: 'PUT',
+        headers: window._commonHeaders,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+      const updated = data.parser || payload;
+
+      // Update view fields
+      document.getElementById('v_name').textContent = updated.name;
+      document.getElementById('v_version').textContent = updated.version;
+      document.getElementById('v_language').textContent = updated.language || '-';
+      document.getElementById('v_description').textContent = updated.description || '—';
+      const cs = updated.config_schema ?? null;
+      document.getElementById('v_config_schema').textContent = cs ? pretty(cs) : '—';
+      const vActive = document.getElementById('v_active');
+      if (updated.active) {
+        vActive.className = 'badge bg-success';
+        vActive.textContent = 'Actif';
+      } else {
+        vActive.className = 'badge bg-secondary';
+        vActive.textContent = 'Inactif';
+      }
+
+      // Update title
+      document.title = `Parseur ${updated.name} v${updated.version} - MqttRelay`;
+
+      // Close modal & notify
+      const modalEl = document.getElementById('editParserModal');
+      (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+      showAlert('Parseur mis à jour avec succès.');
+    } catch (err) {
+      showAlert('Échec de la mise à jour du parseur : ' + err.message, 'danger');
+    } finally {
+      btn.disabled = false; spinner.classList.add('d-none');
+    }
+  });
+})();
+
+(() => {
+  const form = document.getElementById('editParserCodeForm');
+  const btn = document.getElementById('saveEditCodeBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // sync CM -> textarea before reading form fields
+    if (codeEditor) {
+      document.getElementById('e_code').value = codeEditor.getValue();
+    }
+
+    const payload = {
+      code: document.getElementById('e_code').value || null
+    };
+
+    btn.disabled = true; spinner.classList.remove('d-none');
+    try {
+      const res = await fetch("{{ url_for('parsers.editParser', parser_id=parser['id']) }}", {
+        method: 'PUT',
+        headers: window._commonHeaders,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+      const updated = data.parser || payload;
+
+      document.getElementById('v_code').textContent = updated.code || '—';
+
+      const modalEl = document.getElementById('editParserCodeModal');
+      (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+      showAlert('Parseur mis à jour avec succès.');
+    } catch (err) {
+      showAlert('Échec de la mise à jour du parseur : ' + err.message, 'danger');
+    } finally {
+      btn.disabled = false; spinner.classList.add('d-none');
+    }
+  });
+})();
+</script>
+
+<script>
+// ---- Dynamically load CodeMirror assets so we don't touch base.html ----
+const _cmAssets = {
+  css: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css",
+  js:  "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js",
+  addons: [
+    "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"
+  ],
+  modes: {
+    python: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js",
+    javascript: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js",
+    sql: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js",
+    bash: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js",
+    go: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js",
+    rust: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/rust/rust.min.js"
+  }
+};
+
+function loadCSS(href){ return new Promise((res, rej)=>{ const l=document.createElement('link'); l.rel='stylesheet'; l.href=href; l.onload=res; l.onerror=()=>rej(new Error('CSS load failed: '+href)); document.head.appendChild(l); }); }
+function loadJS(src){ return new Promise((res, rej)=>{ const s=document.createElement('script'); s.src=src; s.defer=true; s.onload=res; s.onerror=()=>rej(new Error('JS load failed: '+src)); document.head.appendChild(s); }); }
+
+async function ensureCodeMirror(){
+  if (window.CodeMirror) return;
+  await loadCSS(_cmAssets.css);
+  await loadJS(_cmAssets.js);
+  for (const a of _cmAssets.addons) { await loadJS(a); }
+}
+
+// Load a language mode only once
+const _loadedModes = new Set();
+async function ensureMode(lang){
+  const url = _cmAssets.modes[lang];
+  if (!url || _loadedModes.has(lang)) return;
+  await loadJS(url);
+  _loadedModes.add(lang);
+}
+</script>
+
+<script>
+let codeEditor = null;
+
+// map language -> CodeMirror mode name
+const LANG_TO_MODE = {
+  python: 'python',
+  javascript: 'javascript',
+  sql: 'sql',
+  bash: 'shell',
+  go: 'go',
+  rust: 'rust'
+};
+
+// --- Copy code viewer ---
+document.getElementById('copyCodeBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_code').innerText;
+  try {
+    await navigator.clipboard.writeText(txt);
+    showAlert('Code copié dans le presse-papiers.');
+  } catch {
+    showAlert('Échec de la copie du code.', 'danger');
+  }
+});
+
+const editModalEl = document.getElementById('editParserCodeModal');
+editModalEl.addEventListener('shown.bs.modal', async () => {
+  // lazy-load CM if needed
+  await ensureCodeMirror();
+
+  const textarea = document.getElementById('e_code');
+  if (!codeEditor) {
+    codeEditor = CodeMirror.fromTextArea(textarea, {
+      lineNumbers: true,
+      lineWrapping: false,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      indentUnit: 2,
+      tabSize: 2,
+      indentWithTabs: false,
+      viewportMargin: Infinity // let it grow to fit
+    });
+  }
+
+  // Set the mode based on the selected language
+  const langSel = document.getElementById('e_language');
+  const lang = (langSel.value || '').toLowerCase();
+  await setEditorMode(lang);
+  updateCodeLangHint(lang);
+  codeEditor.refresh(); // in case modal caused sizing issues
+});
+
+// Helper to set mode and load it if needed
+async function setEditorMode(lang) {
+  const modeName = LANG_TO_MODE[lang] || null;
+  if (!modeName) { codeEditor.setOption('mode', null); return; }
+  await ensureMode(lang);
+  codeEditor.setOption('mode', modeName);
+}
+
+// tiny hint near the label
+function updateCodeLangHint(lang){
+  const el = document.getElementById('codeLangHint');
+  el.textContent = lang ? `Coloration : ${lang}` : '';
+}
+
+// React to language changes live (while modal is open)
+document.getElementById('e_language').addEventListener('change', async (e) => {
+  const lang = (e.target.value || '').toLowerCase();
+  if (codeEditor) {
+    await setEditorMode(lang);
+    updateCodeLangHint(lang);
+  }
+});
+</script>
+
+<script>
+// ---------- Devices combo & example fetch ----------
+async function loadDevicesIntoSelect() {
+  const sel = document.getElementById('deviceSelect');
+  sel.innerHTML = `<option value="">— Sélectionnez un appareil —</option>`;
+  try {
+    const res = await fetch('/devices?json=true', { headers: window._commonHeaders });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // Accept either {devices:[...]} or an array [...]
+    const list = Array.isArray(data) ? data : (data.devices || []);
+    // Try common shapes: {id,name}, {id,model,vendor}, {id,device_type:{...}}
+    for (const d of list) {
+      const id = d.id ?? d.device_id ?? d._id ?? d.uuid ?? d.devEUI ?? '';
+      if (!id) continue;
+      const model = d.model ?? d.name ?? (d.device_type?.model) ?? 'Device';
+      const vendor = d.vendor ?? (d.device_type?.vendor) ?? '';
+      const label = vendor ? `${vendor} — ${model} (${id})` : `${model} (${id})`;
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    }
+  } catch (err) {
+    showAlert('Échec du chargement des appareils : ' + err.message, 'danger');
+  }
+}
+
+// Pretty-print JSON if possible; else raw
+function prettyMaybe(text) {
+  const t = (text ?? '').toString().trim();
+  if (!t) return '—';
+  try {
+    const obj = JSON.parse(t);
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return t; // not JSON, print as-is
+  }
+}
+
+// Fetch and render example packet
+async function fetchExampleForSelected() {
+  const sel = document.getElementById('deviceSelect');
+  const out = document.getElementById('examplePacket');
+  const btn = document.getElementById('btnFetchExample');
+  const id = sel.value;
+  if (!id) {
+    showAlert('Veuillez d’abord sélectionner un appareil.', 'danger');
+    return;
+  }
+  btn.disabled = true;
+  const btnOld = btn.innerHTML;
+  btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Récupération…`;
+  try {
+    const res = await fetch(`/device/${encodeURIComponent(id)}/example`, { headers: window._commonHeaders });
+    if (!res.ok) {
+      // Try to read text for better error info
+      const txt = await res.text().catch(()=> '');
+      throw new Error(txt || `HTTP ${res.status}`);
+    }
+
+    // Try JSON first; if not JSON, use text
+    let bodyText = '';
+    const ct = res.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) {
+      const obj = await res.json();
+      bodyText = JSON.stringify(obj, null, 2);
+    } else {
+      bodyText = await res.text();
+      bodyText = prettyMaybe(bodyText);
+    }
+    out.textContent = bodyText;
+
+    // Optionally inject into CodeMirror as a convenience if editor exists and user wants to start from it:
+    // if (codeEditor) codeEditor.setValue(bodyText);
+
+    showAlert('Exemple de paquet récupéré.');
+  } catch (err) {
+    out.textContent = '—';
+    showAlert('Échec de la récupération de l’exemple de paquet : ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = btnOld;
+  }
+}
+
+// Copy example
+document.getElementById('copyExampleBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('examplePacket').innerText;
+  try {
+    await navigator.clipboard.writeText(txt);
+    showAlert('Exemple de paquet copié dans le presse-papiers.');
+  } catch {
+    showAlert('Échec de la copie de l’exemple de paquet.', 'danger');
+  }
+});
+
+// Wire button
+document.getElementById('btnFetchExample').addEventListener('click', fetchExampleForSelected);
+
+// Load devices whenever the modal opens (ensures freshness)
+document.getElementById('editParserCodeModal').addEventListener('shown.bs.modal', () => {
+  loadDevicesIntoSelect();
+});
+</script>

@@ -1,0 +1,52 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Parsers - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top: 50px;">Parsers</h1>
+
+<a href="{{ url_for('parsers.newParser') }}" class="btn btn-secondary">
+    <i class="bi bi-plus"></i> Nuevo Parser
+</a>
+
+<table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
+    <thead class="table-dark">
+        <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Versión</th>
+            <th>Idioma</th>
+            <th>Activo</th>
+            <th>Descripción</th>
+            <th>Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for parser in pagination.current %}
+        <tr>
+            <td>{{ parser.id }}</td>
+            <td>{{ parser['name'] }}</td>
+            <td><code>{{ parser['version'] }}</code></td>
+            <td>{{ parser['language'] or '-' }}</td>
+            <td>
+                {% if parser.active %}
+                    <span class="badge bg-success">Activo</span>
+                {% else %}
+                    <span class="badge bg-secondary">Inactivo</span>
+                {% endif %}
+            </td>
+            <td class="text-muted">{{ (parser['description'] or '-')|truncate(90, True) }}</td>
+            <td>
+                <a href="{{ url_for('parsers.viewParser', parser_id=parser.id) }}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-eye"></i> Ver
+                </a>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="7" class="text-center text-muted">No se encontraron parsers.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

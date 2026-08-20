@@ -1,0 +1,317 @@
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Configuración - MqttRelay{% endblock %}
+
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">Configuración</h1>
+
+<div id="alertContainer"></div>
+
+<ul class="nav nav-tabs" id="settingsTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="user-tab" data-bs-toggle="tab" data-bs-target="#userPane" type="button" role="tab">
+      <i class="bi bi-person-gear"></i> Usuario
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#systemPane" type="button" role="tab">
+      <i class="bi bi-gear"></i> Sistema
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#securityPane" type="button" role="tab">
+      <i class="bi bi-shield-check"></i> Seguridad
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content pt-3">
+  <!-- User tab -->
+  <div class="tab-pane fade show active" id="userPane" role="tabpanel" aria-labelledby="user-tab">
+    <div class="row g-4">
+      <!-- Profile -->
+      <div class="col-lg-6">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-primary text-white">
+            Perfil
+          </div>
+          <div class="card-body">
+            <form id="userProfileForm" class="needs-validation" novalidate>
+              {% if csrf_token is defined %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="form-label">ID de usuario</label>
+                  <input class="form-control" value="{{ user.id }}" readonly>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Privilegio</label>
+                  <input class="form-control" value="{{ user.privilege }}" readonly>
+                </div>
+                <div class="col-md-6">
+                  <label for="email" class="form-label">Correo electrónico</label>
+                  <input id="email" name="email" type="email" class="form-control" value="{{ user.email }}" required>
+                  <div class="invalid-feedback">Por favor, introduce un correo electrónico válido.</div>
+                </div>
+                <!-- Confirm email (appears only if email changes) -->
+                <div class="col-md-6 d-none" id="confirmEmailGroup">
+                  <label for="email_confirm" class="form-label">Confirmar correo electrónico</label>
+                  <input id="email_confirm" type="email" class="form-control" autocomplete="off">
+                  <div class="invalid-feedback">Los correos electrónicos deben coincidir.</div>
+                </div>
+                <div class="col-md-6">
+                  <label for="language" class="form-label">Idioma</label>
+                  <select id="language" name="language" class="form-select">
+                    {% set langs = ['en','fr','ar','es','de','it'] %}
+                    {% for lang in langs %}
+                    <option value="{{ lang }}" {{ lang == (user.language or 'en') and 'selected' or '' }}>{{ lang|upper }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-6 d-flex align-items-end">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="track" name="track" {{ user.track and 'checked' or '' }}>
+                    <label class="form-check-label" for="track">Permitir seguimiento analítico</label>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-3 d-flex gap-2">
+                <button id="saveProfileBtn" type="submit" class="btn btn-primary">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Guardar perfil
+                </button>
+                <button type="reset" class="btn btn-outline-secondary">Restablecer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Change password -->
+      <div class="col-lg-6">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-info text-white">
+            Cambiar contraseña
+          </div>
+          <div class="card-body">
+            <form id="passwordForm" class="needs-validation" novalidate>
+              {% if csrf_token is defined %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+              <div class="mb-3">
+                <label for="current_password" class="form-label">Contraseña actual</label>
+                <input id="current_password" name="current_password" type="password" class="form-control" required>
+                <div class="invalid-feedback">La contraseña actual es obligatoria.</div>
+              </div>
+              <div class="mb-3">
+                <label for="new_password" class="form-label">Nueva contraseña</label>
+                <input id="new_password" name="new_password" type="password" class="form-control" minlength="8" required
+                       aria-describedby="pwHelp">
+                <div id="pwHelp" class="form-text">Mínimo 8 caracteres.</div>
+                <div class="invalid-feedback">La nueva contraseña debe tener al menos 8 caracteres.</div>
+              </div>
+              <div class="mb-3">
+                <label for="confirm_password" class="form-label">Confirmar nueva contraseña</label>
+                <input id="confirm_password" name="confirm_password" type="password" class="form-control" required>
+                <div class="invalid-feedback">Las contraseñas deben coincidir.</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button id="savePasswordBtn" type="submit" class="btn btn-info text-white">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Actualizar contraseña
+                </button>
+                <button type="reset" class="btn btn-outline-secondary">Restablecer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <div class="tab-pane fade" id="systemPane" role="tabpanel" aria-labelledby="system-tab">
+    <div class="row g-4">
+      <!-- Secrets & Encryption -->
+      <div class="col-12">
+       <!-- Metric Catalog -->
+      <div class="col-12">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <span>Catálogo de métricas</span>
+            <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#addMetricModal">
+              <i class="bi bi-plus-circle"></i> Añadir métrica
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="row mb-3">
+              <div class="col-sm-6">
+                <input id="metricSearch" class="form-control" placeholder="Buscar por nombre clave, unidad o descripción…">
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle" id="metricsTable">
+                <thead class="table-dark">
+                  <tr>
+                    <th style="width: 90px;">ID</th>
+                    <th>Clave</th>
+                    <th>Unidad predeterminada</th>
+                    <th>Descripción</th>
+                    <th class="text-end" style="width: 100px;">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {% for m in metrics %}
+                  <tr id="metric-row-{{ m.id }}">
+                    <td>#{{ m.id }}</td>
+                    <td class="m-key"><code>{{ m.key_name }}</code></td>
+                    <td class="m-unit">{{ m.default_unit or '-' }}</td>
+                    <td class="m-desc text-muted">{{ m.description or '—' }}</td>
+                    <td class="text-end">
+                      <button class="btn btn-sm btn-outline-danger delete-metric-btn"
+                              data-metric-id="{{ m.id }}"
+                              data-delete-url="{{ url_for('metrics.deleteMetric', metric_id=m.id) }}"
+                              title="Eliminar métrica">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="6" class="text-center text-muted">Aún no hay métricas.</td></tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <!-- System tab -->
+  <div class="tab-pane fade" id="securityPane" role="tabpanel" aria-labelledby="security-tab">
+    <div class="row g-4">
+      <!-- Secrets & Encryption -->
+      <div class="col-12">
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-warning d-flex justify-content-between align-items-center">
+            <span class="fw-semibold"><i class="bi bi-shield-lock me-1"></i> Secretos &amp; Encriptación (Reversible)</span>
+            <small class="text-dark">Controla cómo se almacenan las contraseñas de servicio/base de datos</small>
+          </div>
+          <div class="card-body">
+            <form id="cryptoForm" class="row g-3">
+              {% if csrf_token is defined %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
+
+              <div class="col-md-4">
+                <label for="crypto_algorithm" class="form-label">Algoritmo</label>
+                <select id="crypto_algorithm" class="form-select">
+                  <option value="aes-256-gcm">AES-256-GCM (recomendado)</option>
+                  <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
+                  <option value="aes-256-cbc-hmac">AES-256-CBC + HMAC-SHA256</option>
+                </select>
+                <div class="form-text">Encriptación autenticada para confidencialidad &amp; integridad.</div>
+              </div>
+
+              <div class="col-md-4">
+                <label for="crypto_key_source" class="form-label">Fuente de la clave</label>
+                <select id="crypto_key_source" class="form-select">
+                  <option value="env">Variable de entorno</option>
+                  <option value="kms">KMS / HSM externo</option>
+                  <option value="db">Base de datos (no recomendado)</option>
+                </select>
+                <div class="form-text">Dónde se recupera la clave de encriptación en tiempo de ejecución.</div>
+              </div>
+
+              <div class="col-md-4">
+                <label for="crypto_key_id" class="form-label">Alias / ID de la clave</label>
+                <input id="crypto_key_id" class="form-control" placeholder="ej., PRIMARY" maxlength="128">
+                <div class="form-text">Un identificador estable para la clave activa (no el valor de la clave).</div>
+              </div>
+
+              <div class="col-md-3">
+                <label for="crypto_iv_bytes" class="form-label">Bytes IV/Nonce</label>
+                <input id="crypto_iv_bytes" type="number" class="form-control" min="8" max="32" step="1" value="12">
+                <div class="form-text">12 recomendado para GCM/Poly1305.</div>
+              </div>
+
+              <div class="col-md-3">
+                <label for="crypto_tag_bytes" class="form-label">Bytes de etiqueta</label>
+                <input id="crypto_tag_bytes" type="number" class="form-control" min="12" max="16" step="1" value="16">
+                <div class="form-text">Longitud de la etiqueta de autenticación (GCM/Poly1305).</div>
+              </div>
+
+              <div class="col-md-3">
+                <label for="crypto_encoding" class="form-label">Codificación del texto cifrado</label>
+                <select id="crypto_encoding" class="form-select">
+                  <option value="base64">Base64</option>
+                  <option value="hex">Hex</option>
+                </select>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Estado</label>
+                <div id="crypto_status" class="form-control-plaintext text-muted">Cargando…</div>
+              </div>
+
+              <div class="col-12">
+                <div class="alert alert-warning d-flex align-items-start" role="alert">
+                  <i class="bi bi-exclamation-triangle me-2"></i>
+                  <div>
+                    La encriptación reversible protege en reposo, pero cualquiera con acceso a la BD <em>y</em> a la clave puede descifrar.
+                    Es preferible almacenar las llaves fuera de la BD (Env o KMS). Rotar las llaves permitirá volver a encriptar en el lugar.
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12">
+                <label for="crypto_test_plain" class="form-label">Probar encriptar/desencriptar</label>
+                <div class="row g-2">
+                  <div class="col-md-4">
+                    <input id="crypto_test_plain" class="form-control" placeholder="Texto plano (ej., miContraseñaSecreta)">
+                  </div>
+                  <div class="col-md-8">
+                    <input id="crypto_test_cipher" class="form-control" placeholder="Resultado cifrado" readonly>
+                  </div>
+                </div>
+                <div class="mt-2 small">
+                  <span class="me-2">Descifrado:</span>
+                  <code id="crypto_test_decrypted">—</code>
+                </div>
+              </div>
+
+              <div class="col-12 d-flex flex-wrap gap-2 mt-2">
+                <button id="cryptoSaveBtn" type="button" class="btn btn-primary">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Guardar configuración de encriptación
+                </button>
+                <button id="cryptoTestBtn" type="button" class="btn btn-outline-secondary">
+                  Probar encriptar/desencriptar
+                </button>
+                <button id="cryptoRotateBtn" type="button" class="btn btn-outline-warning">
+                  Rotar clave (nueva versión)
+                </button>
+                <button id="cryptoReencryptBtn" type="button" class="btn btn-outline-danger">
+                  Re-encriptar contraseñas existentes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{%include 'es/general/dialogs/addMetricModal.html' %}
+
+{% endblock %}
+
+{% block scripts%}
+
+{%include 'es/general/scripts/settings.js.html' %}
+
+{% endblock %}

@@ -1,24 +1,24 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}Routing Rules - TechDash{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Règles de routage - MqttRelay{% endblock %}
 {% block content %}
 
-<h1 class="mb-4" style="margin-top: 50px;">Routing Rules</h1>
+<h1 class="mb-4" style="margin-top: 50px;">Règles de routage</h1>
 
 <a href="{{ url_for('routes.newRoutingRule') }}" class="btn btn-secondary">
-  <i class="bi bi-plus"></i> New Rule
+  <i class="bi bi-plus"></i> Nouvelle règle
 </a>
 
 <table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
   <thead class="table-dark">
     <tr>
       <th>Client</th>
-      <th>Topic</th>
-      <th>Device</th>
-      <th>Parser</th>
-      <th>Priority</th>
-      <th>Status</th>
+      <th>Sujet</th>
+      <th>Appareil</th>
+      <th>Parseur</th>
+      <th>Priorité</th>
+      <th>Statut</th>
       <th>Conditions</th>
-      <th>Created</th>
+      <th>Créé</th>
       <th>Actions</th>
     </tr>
   </thead>
@@ -29,7 +29,7 @@
       <!-- If you have joined names available, prefer them; otherwise show IDs -->
       <td>{{ route.client['name'] or route.client_id }}</td>
       <td>{{ route.mqtt_topic['topic'] or route.topic_id or '—' }}</td>
-      <td>{% if 'device' in route.entities %} {{route['device']['name']}} {% else %} Any {%endif%}</td>
+      <td>{% if 'device' in route.entities %} {{route['device']['name']}} {% else %} Tous {%endif%}</td>
       <td>{{ route.parser['name'] or route.parser_id or '—' }}</td>
 
       <td>
@@ -38,9 +38,9 @@
 
       <td>
         {% if route.active %}
-          <span class="badge bg-success">Active</span>
+          <span class="badge bg-success">Actif</span>
         {% else %}
-          <span class="badge bg-secondary">Inactive</span>
+          <span class="badge bg-secondary">Inactif</span>
         {% endif %}
       </td>
 
@@ -63,13 +63,13 @@
 
       <td>
         <a href="{{ url_for('routes.viewRoutingRule', routingrule_id=route.id) }}" class="btn btn-sm btn-primary">
-          <i class="bi bi-eye"></i> View
+          <i class="bi bi-eye"></i> Voir
         </a>
       </td>
     </tr>
     {% else %}
     <tr>
-      <td colspan="10" class="text-center text-muted">No routing rules found.</td>
+      <td colspan="10" class="text-center text-muted">Aucune règle de routage trouvée.</td>
     </tr>
     {% endfor %}
   </tbody>

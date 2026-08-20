@@ -1,8 +1,8 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}New Routing Rule - MqttRelay{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Nouvelle règle de routage - MqttRelay{% endblock %}
 {% block content %}
 
-<h1 class="mb-4" style="margin-top: 50px;">Add Routing Rule</h1>
+<h1 class="mb-4" style="margin-top: 50px;">Ajouter une règle de routage</h1>
 
 {% with msgs = get_flashed_messages(with_categories=true) %}
   {% if msgs %}
@@ -27,22 +27,22 @@
         {% if request.form.get('client_id') and request.form.get('client_name') %}
           <option value="{{ request.form.get('client_id') }}" selected>{{ request.form.get('client_name') }}</option>
         {% else %}
-          <option value="" selected disabled>Type to search clients…</option>
+          <option value="" selected disabled>Tapez pour rechercher des clients…</option>
         {% endif %}
       </select>
       <input type="hidden" id="client_id" name="client_id" value="{{ request.form.get('client_id','') }}" required>
-      <div class="form-text">Selecting a client will filter topics, devices, and destinations.</div>
-      <div class="invalid-feedback">Please choose a client.</div>
+      <div class="form-text">La sélection d’un client filtrera les sujets, appareils et destinations.</div>
+      <div class="invalid-feedback">Veuillez choisir un client.</div>
     </div>
 
     <!-- PRIORITY -->
     <div class="col-md-3">
-      <label for="priority" class="form-label">Priority</label>
+      <label for="priority" class="form-label">Priorité</label>
       <input type="number" class="form-control" id="priority" name="priority"
              min="0" max="100000" step="1"
              value="{{ request.form.get('priority','100') }}" required>
-      <div class="form-text">Lower value = higher priority. Default is 100.</div>
-      <div class="invalid-feedback">Please provide a valid priority.</div>
+      <div class="form-text">Valeur plus faible = priorité plus élevée. Par défaut&nbsp;: 100.</div>
+      <div class="invalid-feedback">Veuillez fournir une priorité valide.</div>
     </div>
 
     <!-- ACTIVE -->
@@ -51,7 +51,7 @@
         {% set active_val = request.form.get('active','1') %}
         <input class="form-check-input" type="checkbox" id="active" name="active"
                value="1" {{ 'checked' if active_val in ['1','true','on'] else '' }}>
-        <label class="form-check-label" for="active">Active</label>
+        <label class="form-check-label" for="active">Actif</label>
       </div>
     </div>
 
@@ -59,55 +59,55 @@
 
     <!-- TOPIC (optional, filtered by client) -->
     <div class="col-md-6">
-      <label for="topic_select" class="form-label">Topic (optional)</label>
+      <label for="topic_select" class="form-label">Sujet (facultatif)</label>
       <select id="topic_select" class="form-select" {% if not request.form.get('client_id') %}disabled{% endif %}>
-        <option value="" selected>Any topic</option>
+        <option value="" selected>Tout sujet</option>
       </select>
       <input type="hidden" id="topic_id" name="topic_id" value="{{ request.form.get('topic_id','') }}">
-      <div class="form-text">Leave empty to match any topic for this client.</div>
+      <div class="form-text">Laissez vide pour correspondre à n’importe quel sujet de ce client.</div>
     </div>
 
     <!-- DEVICE (optional, filtered by client) -->
     <div class="col-md-6">
-      <label for="device_select" class="form-label">Device (optional)</label>
+      <label for="device_select" class="form-label">Appareil (facultatif)</label>
       <select id="device_select" class="form-select" {% if not request.form.get('client_id') %}disabled{% endif %}>
-        <option value="" selected>Any device</option>
+        <option value="" selected>Tout appareil</option>
       </select>
       <input type="hidden" id="device_id" name="device_id" value="{{ request.form.get('device_id','') }}">
-      <div class="form-text">Leave empty to match any device for this client.</div>
+      <div class="form-text">Laissez vide pour correspondre à n’importe quel appareil de ce client.</div>
     </div>
 
     <!-- PARSER -->
     <div class="col-md-6">
-      <label for="parser_select" class="form-label">Parser</label>
+      <label for="parser_select" class="form-label">Parseur</label>
       <select id="parser_select" class="form-select">
-        <option value="" selected disabled>Type to search parsers…</option>
+        <option value="" selected disabled>Tapez pour rechercher des parseurs…</option>
       </select>
       <input type="hidden" id="parser_id" name="parser_id" value="{{ request.form.get('parser_id','') }}">
-      <div class="form-text">Choose the parser that will handle matching messages.</div>
-      <div class="invalid-feedback">Please choose a parser.</div>
+      <div class="form-text">Choisissez le parseur qui traitera les messages correspondants.</div>
+      <div class="invalid-feedback">Veuillez choisir un parseur.</div>
     </div>
 
     <!-- PARSER CONFIG (plain JSON) -->
     <div class="col-md-6">
-      <label for="parser_config" class="form-label">Parser Config (JSON)</label>
+      <label for="parser_config" class="form-label">Configuration du parseur (JSON)</label>
       <textarea class="form-control font-monospace" id="parser_config" name="parser_config"
                 rows="6" placeholder='{"threshold":25,"units":"C","map":{"temp":"t","hum":"h"}}'
                 aria-describedby="parserConfigHelp parserConfigFeedback">{{ request.form.get('parser_config','') }}</textarea>
-      <div class="form-text" id="parserConfigHelp">Optional configuration object passed to the parser (plain JSON).</div>
-      <div class="invalid-feedback" id="parserConfigFeedback">Invalid JSON.</div>
+      <div class="form-text" id="parserConfigHelp">Objet de configuration facultatif transmis au parseur (JSON simple).</div>
+      <div class="invalid-feedback" id="parserConfigFeedback">JSON invalide.</div>
     </div>
 
     <!-- CONDITIONS (mongo_dsl JSON) -->
     <div class="col-12">
-      <label for="conditions" class="form-label">Conditions (mongo_dsl JSON, optional)</label>
+      <label for="conditions" class="form-label">Conditions (mongo_dsl JSON, facultatif)</label>
       <textarea class="form-control font-monospace" id="conditions" name="conditions"
                 rows="6" placeholder='{"payload.temp":{"$gt":25}}'
                 aria-describedby="conditionsHelp conditionsFeedback">{{ request.form.get('conditions','') }}</textarea>
       <div class="form-text" id="conditionsHelp">
-        Optional payload/message filters in mongo_dsl (e.g., {"payload.type":"lse01"}).
+        Filtres facultatifs sur le payload/message en mongo_dsl (ex.&nbsp;: {"payload.type":"lse01"}).
       </div>
-      <div class="invalid-feedback" id="conditionsFeedback">Invalid JSON.</div>
+      <div class="invalid-feedback" id="conditionsFeedback">JSON invalide.</div>
     </div>
 
     <hr class="mt-2 mb-1"/>
@@ -122,14 +122,14 @@
           <input type="hidden" name="destination_ids[]" value="{{ did }}">
         {% endfor %}
       </div>
-      <div class="form-text">Pick one or more active destinations for this client.</div>
+      <div class="form-text">Choisissez une ou plusieurs destinations actives pour ce client.</div>
     </div>
 
   </div>
 
   <div class="mt-4 d-flex gap-2">
-    <button type="submit" class="btn btn-primary">Create Rule</button>
-    <a href="{{ url_for('routes.listRoutingRules') }}" class="btn btn-outline-secondary">Cancel</a>
+    <button type="submit" class="btn btn-primary">Créer la règle</button>
+    <a href="{{ url_for('routes.listRoutingRules') }}" class="btn btn-outline-secondary">Annuler</a>
   </div>
 </form>
 
@@ -156,7 +156,7 @@
       const raw = el.value.trim();
       if (!raw){ el.setCustomValidity(''); return; }
       try { JSON.parse(raw); el.setCustomValidity(''); }
-      catch(e){ el.setCustomValidity('Invalid JSON'); if(fb) fb.textContent = 'Invalid JSON syntax.'; }
+      catch(e){ el.setCustomValidity('JSON invalide'); if(fb) fb.textContent = 'Syntaxe JSON invalide.'; }
     }
     el?.addEventListener('input', run);
     run();
@@ -179,7 +179,7 @@
     searchField: ['name'],
     create: false,
     allowEmptyOption: true,
-    placeholder: 'Type to search clients…',
+    placeholder: 'Tapez pour rechercher des clients…',
     loadThrottle: 300,
     load: async (query, callback) => {
       if (!query || !query.trim()) return callback();
@@ -207,7 +207,7 @@
     searchField: ['label'],
     create: false,
     allowEmptyOption: true,
-    placeholder: 'Any topic',
+    placeholder: 'Tout sujet',
     onChange: (val) => { topicIdEl.value = val || ''; }
   });
 
@@ -218,7 +218,7 @@
     searchField: ['label'],
     create: false,
     allowEmptyOption: true,
-    placeholder: 'Any device',
+    placeholder: 'Tout appareil',
     onChange: (val) => { deviceIdEl.value = val || ''; }
   });
 
@@ -229,7 +229,7 @@
     searchField: ['name','code'],
     create: false,
     allowEmptyOption: true,
-    placeholder: 'Type to search parsers…',
+    placeholder: 'Tapez pour rechercher des parseurs…',
     loadThrottle: 300,
     load: async (query, callback) => {
       try {
@@ -254,7 +254,7 @@
     searchField: ['label','type'],
     create: false,
     plugins: ['remove_button'],
-    placeholder: 'Select one or more destinations…',
+    placeholder: 'Sélectionnez une ou plusieurs destinations…',
     onChange: (values) => syncDestinationHidden(values)
   });
 
@@ -310,13 +310,13 @@
         .filter(x => x.id && x.label);
 
       topicTS.clearOptions();
-      topicTS.addOption({ id:'', label:'Any topic' });
+      topicTS.addOption({ id:'', label:'Tout sujet' });
       items.forEach(x => topicTS.addOption(x));
       const cur = "{{ request.form.get('topic_id','') }}".trim();
       if (cur) topicTS.setValue(cur, true);
     }catch{
       topicTS.clearOptions();
-      topicTS.addOption({ id:'', label:'(failed to load topics)' });
+      topicTS.addOption({ id:'', label:'(échec du chargement des sujets)' });
     }
   }
 
@@ -334,13 +334,13 @@
         .filter(x => x.id && x.label);
 
       deviceTS.clearOptions();
-      deviceTS.addOption({ id:'', label:'Any device' });
+      deviceTS.addOption({ id:'', label:'Tout appareil' });
       items.forEach(x => deviceTS.addOption(x));
       const cur = "{{ request.form.get('device_id','') }}".trim();
       if (cur) deviceTS.setValue(cur, true);
     }catch{
       deviceTS.clearOptions();
-      deviceTS.addOption({ id:'', label:'(failed to load devices)' });
+      deviceTS.addOption({ id:'', label:'(échec du chargement des appareils)' });
     }
   }
 

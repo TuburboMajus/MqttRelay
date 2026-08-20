@@ -1,0 +1,73 @@
+htmlCopy code<!-- Add Destination Modal -->
+<div class="modal fade" id="addDestinationModal" tabindex="-1" aria-labelledby="addDestinationLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" id="addDestinationForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addDestinationLabel">Ajouter une destination</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" name="client_id" value="{{ client['id'] }}">
+
+        <div class="mb-3">
+          <label for="dest_type" class="form-label">Type</label>
+          <select id="dest_type" name="type" class="form-select" required>
+            <option value="" selected disabled>Sélectionnez un type</option>
+            <option value="mysql">MySQL</option>
+            <option value="postgres">Postgres</option>
+            <option value="http">HTTP</option>
+            <option value="kafka">Kafka</option>
+            <option value="file">Fichier</option>
+            <option value="other">Autre</option>
+          </select>
+        </div>
+
+        <div class="row g-3 db-only d-none">
+          <div class="col-sm-8">
+            <label for="dest_host" class="form-label">Hôte</label>
+            <input id="dest_host" name="host" class="form-control" placeholder="db.example.com">
+          </div>
+          <div class="col-sm-4">
+            <label for="dest_port" class="form-label">Port</label>
+            <input id="dest_port" name="port" type="number" min="0" step="1" class="form-control" placeholder="3306">
+          </div>
+          <div class="col-sm-12">
+            <label for="dest_database_name" class="form-label">Base de données</label>
+            <input id="dest_database_name" name="database_name" class="form-control" placeholder="mydb">
+          </div>
+          <div class="col-sm-6">
+            <label for="dest_username" class="form-label">Nom d’utilisateur</label>
+            <input id="dest_username" name="username" class="form-control" placeholder="dbuser">
+          </div>
+          <div class="col-sm-6">
+            <label for="dest_password" class="form-label">Mot de passe</label>
+            <input id="dest_password" name="password" type="password" class="form-control" placeholder="••••••••">
+            <div class="form-text">Stocké chifré côté serveur.</div>
+          </div>
+        </div>
+
+        <div class="mb-3 uri-only d-none">
+          <label for="dest_uri" class="form-label">URI / Point de terminaison</label>
+          <input id="dest_uri" name="uri" class="form-control" placeholder="https://api.example.com/ingest">
+        </div>
+
+        <div class="mb-3">
+          <label for="dest_options_json" class="form-label">Options (JSON)</label>
+          <textarea id="dest_options_json" name="options_json" rows="4" class="form-control" placeholder='{"ssl": true, "table": "measurements"}'></textarea>
+        </div>
+
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="dest_active" name="active" checked>
+          <label class="form-check-label" for="dest_active">Actif</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button id="saveDestinationBtn" type="submit" class="btn btn-success">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Ajouter une destination
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

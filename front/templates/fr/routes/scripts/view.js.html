@@ -1,0 +1,335 @@
+htmlCopy code<!-- Tom Select -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+<script>
+// ---------- Utilitaires ----------
+function showAlert(message, variant='success') {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = `
+    <div class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>`;
+}
+function safeJsonParse(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  try { return JSON.parse(t); } catch(e) { throw new Error('JSON invalide'); }
+}
+function pretty(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj ?? ''); } }
+
+// En-têtes CSRF
+(function initCommonHeaders(){
+  const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+  const metaVal = metaCsrf ? metaCsrf.getAttribute('content') : "";
+  const jinjaVal = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  const csrfToken = metaVal || jinjaVal || "";
+  window._commonHeaders = { 'Content-Type': 'application/json', 'Accept':'application/json' };
+  if (csrfToken) window._commonHeaders['X-CSRFToken'] = csrfToken;
+})();
+
+// ----- Boutons de copie -----
+document.getElementById('copyParserConfigBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_parser_config').innerText;
+  try { await navigator.clipboard.writeText(txt); showAlert('Configuration du parseur copiée.'); }
+  catch { showAlert('Échec de la copie.', 'danger'); }
+});
+document.getElementById('copyConditionsBtn').addEventListener('click', async () => {
+  const txt = document.getElementById('v_conditions').innerText;
+  try { await navigator.clipboard.writeText(txt); showAlert('Conditions copiées.'); }
+  catch { showAlert('Échec de la copie.', 'danger'); }
+});
+
+// ----- Suppression de la règle -----
+document.getElementById('deleteRuleBtn').addEventListener('click', async () => {
+  if (!confirm('Supprimer définitivement cette règle de routage&nbsp;?')) return;
+  const btn = document.getElementById('deleteRuleBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch("{{ url_for('routes.deleteRoutingRule', routingrule_id=rule.id) }}", { method:'DELETE', headers: window._commonHeaders });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    showAlert('Règle supprimée. Redirection…');
+    setTimeout(() => { window.location.href = "{{ url_for('routes.listRoutingRules') }}"; }, 600);
+  } catch (err) {
+    btn.disabled = false;
+    showAlert('Échec de la suppression de la règle&nbsp;: ' + err.message, 'danger');
+  }
+});
+</script>
+
+<script>
+// ---------- Logique de la fenêtre de modification ----------
+async function fetchJSON(url){
+  const r = await fetch(url, { headers: window._commonHeaders });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function jsonValidator(textareaId, feedbackId){
+  const el = document.getElementById(textareaId);
+  const fb = document.getElementById(feedbackId);
+  function run(){
+    const raw = el.value.trim();
+    if (!raw){ el.setCustomValidity(''); return; }
+    try { JSON.parse(raw); el.setCustomValidity(''); if(fb) fb.textContent=''; }
+    catch(e){ el.setCustomValidity('JSON invalide'); if(fb) fb.textContent='Syntaxe JSON invalide.'; }
+  }
+  el?.addEventListener('input', run); run();
+}
+
+const eClientIdEl = document.getElementById('e_client_id');
+const eTopicIdEl  = document.getElementById('e_topic_id');
+const eDeviceIdEl = document.getElementById('e_device_id');
+const eParserIdEl = document.getElementById('e_parser_id');
+
+// Instances Tom Select
+const eClientTS = new TomSelect('#e_client_select', {
+  valueField:'id', labelField:'name', searchField:['name'],
+  create:false, allowEmptyOption:true, placeholder:'Tapez pour rechercher des clients…',
+  loadThrottle:300,
+  load: async (query, cb) => {
+    if (!query || !query.trim()) return cb();
+    try {
+      const url = new URL('/clients', window.location.origin);
+      url.searchParams.set('name', query.trim()); url.searchParams.set('json','true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data)?data:(data.items||[]))
+        .map(c => ({ id:c.id ?? c._id ?? c.uuid ?? '', name:c.name ?? c.title ?? '' }))
+        .filter(it => it.id && it.name);
+      cb(items);
+    } catch { cb(); }
+  },
+  onChange: async (val) => {
+    eClientIdEl.value = val || '';
+    await reloadClientFiltered(val);
+  }
+});
+
+const eTopicTS = new TomSelect('#e_topic_select', {
+  valueField:'id', labelField:'label', searchField:['label'],
+  create:false, allowEmptyOption:true, placeholder:'N’importe quel topic',
+  onChange: (val)=> eTopicIdEl.value = val || ''
+});
+const eDeviceTS = new TomSelect('#e_device_select', {
+  valueField:'id', labelField:'label', searchField:['label'],
+  create:false, allowEmptyOption:true, placeholder:'N’importe quel appareil',
+  onChange: (val)=> eDeviceIdEl.value = val || ''
+});
+const eParserTS = new TomSelect('#e_parser_select', {
+  valueField:'id', labelField:'name', searchField:['name','code'],
+  create:false, allowEmptyOption:true, placeholder:'Tapez pour rechercher des parseurs…',
+  loadThrottle:300,
+  load: async (query, cb) => {
+    try{
+      const url = new URL('/parsers', window.location.origin);
+      if (query && query.trim()) url.searchParams.set('name', query.trim());
+      url.searchParams.set('active','1'); url.searchParams.set('json','true');
+      const data = await fetchJSON(url);
+      const items = (Array.isArray(data)?data:(data.items||[]))
+        .map(p => ({ id:p.id ?? p._id ?? '', name:p.name ?? p.code ?? ('parser#'+(p.id||'')) }))
+        .filter(it => it.id && it.name);
+      cb(items);
+    }catch{ cb(); }
+  },
+  onChange: (val)=> eParserIdEl.value = val || ''
+});
+const eDestTS = new TomSelect('#e_destinations_select', {
+  valueField:'id', labelField:'label', searchField:['label','type'],
+  create:false, plugins:['remove_button'], placeholder:'Sélectionnez des destinations…'
+});
+
+async function reloadClientFiltered(clientId){
+  // Topics
+  try{
+    const url = new URL('/topics', window.location.origin);
+    url.searchParams.set('client_id', clientId || ''); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(t => ({ id: t.mqtt_topic?.id ?? t.id ?? t.topic_id ?? '', label: t.mqtt_topic?.topic ?? t.topic ?? t.topic_string ?? ('topic#'+(t.id||'')) }))
+      .filter(x => x.id && x.label);
+
+    eTopicTS.clearOptions(); eTopicTS.addOption({id:'', label:'N’importe quel topic'});
+    items.forEach(x => eTopicTS.addOption(x));
+    const cur = "{{ rule.topic_id or '' }}";
+    if (cur) eTopicTS.setValue(cur, true);
+  }catch{
+    eTopicTS.clearOptions(); eTopicTS.addOption({id:'', label:'(échec du chargement)'});
+  }
+
+  // Appareils
+  try{
+    const url = new URL('/devices', window.location.origin);
+    url.searchParams.set('client_id', clientId || ''); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(d => {
+        const label = d.label || [d.vendor, d.model, d.serial || d.sn].filter(Boolean).join(' ');
+        return { id: d.id ?? d._id ?? d.uuid ?? '', label: label || ('device#'+(d.id||'')) };
+      })
+      .filter(x => x.id && x.label);
+
+    eDeviceTS.clearOptions(); eDeviceTS.addOption({id:'', label:'N’importe quel appareil'});
+    items.forEach(x => eDeviceTS.addOption(x));
+    const cur = "{{ rule.device_id or '' }}";
+    if (cur) eDeviceTS.setValue(cur, true);
+  }catch{
+    eDeviceTS.clearOptions(); eDeviceTS.addOption({id:'', label:'(échec du chargement)'});
+  }
+
+  // Destinations
+  try{
+    const url = new URL('/client_destinations', window.location.origin);
+    url.searchParams.set('client_id', clientId || ''); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(x => {
+        const parts = [x.type?.toUpperCase()];
+        if (x.host) parts.push(x.host + (x.port?(':'+x.port):''));
+        if (x.database_name) parts.push(x.database_name);
+        if (x.uri) parts.push(x.uri);
+        return { id:x.id ?? x._id ?? '', label: (parts.filter(Boolean).join(' · ')) || ('dest#'+(x.id||'')) };
+      })
+      .filter(x => x.id && x.label);
+
+    eDestTS.clearOptions();
+    items.forEach(x => eDestTS.addOption(x));
+    // pré-sélectionner les actuelles si votre backend les fournit comme liste d’IDs
+    const currentDestIds = {{ (destinations|map(attribute='id')|list)|tojson if destinations else '[]' }};
+    if (currentDestIds.length) eDestTS.setValue(currentDestIds, true);
+  }catch{
+    eDestTS.clearOptions();
+  }
+}
+
+// Validateurs JSON
+jsonValidator('e_parser_config', 'e_parserConfigFeedback');   // JSON simple
+jsonValidator('e_conditions', 'e_conditionsFeedback');        // JSON mongo_dsl
+
+// Initialiser à l’ouverture de la modale (assure des listes à jour)
+document.getElementById('editRouteModal').addEventListener('shown.bs.modal', async () => {
+  const cid = "{{ rule.client_id or '' }}";
+  const cname = "{{ rule.client_name or '' }}";
+  if (cid && cname) {
+    eClientTS.addOption({ id: cid, name: cname });
+    eClientTS.setValue(cid, true);
+  }
+  await reloadClientFiltered(cid);
+  // Préchargement des parseurs (si pas déjà fait)
+  try {
+    const url = new URL('/parsers', window.location.origin);
+    url.searchParams.set('active','1'); url.searchParams.set('json','true');
+    const data = await fetchJSON(url);
+    const items = (Array.isArray(data)?data:(data.items||[]))
+      .map(p => ({ id:p.id ?? p._id ?? '', name:p.name ?? p.code ?? ('parser#'+(p.id||'')) }))
+      .filter(it => it.id && it.name);
+    items.forEach(p => eParserTS.addOption(p));
+    const cur = "{{ rule.parser_id or '' }}";
+    if (cur) eParserTS.setValue(cur, true);
+  } catch {}
+});
+
+// Soumettre la modification
+(function(){
+  const form = document.getElementById('editRouteForm');
+  const btn = document.getElementById('saveEditRouteBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // Valider les champs JSON
+    let parserCfg = null, condObj = null;
+    try { parserCfg = safeJsonParse(document.getElementById('e_parser_config').value); }
+    catch { form.classList.add('was-validated'); return; }
+    try { condObj = safeJsonParse(document.getElementById('e_conditions').value); }
+    catch { form.classList.add('was-validated'); return; }
+
+    // Requis : client, priorité, parseur (facultatif dans le schéma mais généralement nécessaire)
+    const payload = {
+      client_id: parseInt(document.getElementById('e_client_id').value) || null,
+      topic_id:  parseInt(document.getElementById('e_topic_id').value)  || null,
+      device_id: parseInt(document.getElementById('e_device_id').value) || null,
+      parser_id: parseInt(document.getElementById('e_parser_id').value) || null,
+      parser_config: parserCfg,           // objet JSON simple ou null
+      conditions: condObj,                // objet JSON mongo_dsl ou null
+      priority: parseInt(document.getElementById('e_priority').value || '100', 10),
+      active: !!document.getElementById('e_active').checked,
+      destination_ids: eDestTS.getValue() // tableau d'IDs
+    };
+
+    if (!payload.client_id || !payload.priority) {
+      form.classList.add('was-validated');
+      return;
+    }
+
+    btn.disabled = true; spinner.classList.remove('d-none');
+    try {
+      const res = await fetch("{{ url_for('routes.editRoutingRule', routingrule_id=rule.id) }}", {
+        method: 'PUT',
+        headers: window._commonHeaders,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+      const updated = data.rule || payload;
+
+      // Mettre à jour l’affichage sans rechargement
+      document.getElementById('v_priority').textContent = updated.priority;
+      const vActive = document.getElementById('v_active');
+      if (updated.active) { vActive.className='badge bg-success'; vActive.textContent='Actif'; }
+      else { vActive.className='badge bg-secondary'; vActive.textContent='Inactif'; }
+      document.getElementById('v_client').textContent = updated.client_name || updated.client_id || '—';
+      document.getElementById('v_topic').textContent  = updated.topic_string || updated.topic_id || '—';
+      document.getElementById('v_device').textContent = updated.device_label || updated.device_id || '—';
+      document.getElementById('v_parser').textContent = updated.parser_name || updated.parser_id || '—';
+      document.getElementById('v_parser_config').textContent = updated.parser_config ? pretty(updated.parser_config) : '—';
+      document.getElementById('v_conditions').textContent = updated.conditions ? pretty(updated.conditions) : '—';
+
+      // Vue des destinations
+      const vDestList = document.getElementById('v_destinations');
+      const vDestEmpty = document.getElementById('v_destinations_empty');
+      if (Array.isArray(updated.destinations) && updated.destinations.length) {
+        if (vDestEmpty) vDestEmpty.remove();
+        if (!vDestList) {
+          // créer UL s’il n’existe pas (première fois)
+          const ul = document.createElement('ul');
+          ul.id = 'v_destinations';
+          ul.className = 'list-group';
+          document.querySelector('#tab-details .card-body .row').appendChild(ul);
+        } else {
+          vDestList.innerHTML = '';
+        }
+        const target = document.getElementById('v_destinations') || ul;
+        updated.destinations.forEach(d => {
+          const li = document.createElement('li');
+          li.className = 'list-group-item d-flex justify-content-between align-items-center';
+          li.innerHTML = `<span><span class="badge bg-secondary me-2">${(d.type||'').toUpperCase()}</span>${d.label || d.id}</span><span class="text-muted small">#${d.id}</span>`;
+          target.appendChild(li);
+        });
+      } else {
+        // vide
+        if (vDestList) vDestList.innerHTML = '';
+        if (!document.getElementById('v_destinations_empty')) {
+          const div = document.createElement('div');
+          div.id = 'v_destinations_empty';
+          div.className = 'text-muted';
+          div.textContent = '—';
+          document.querySelector('#tab-details .card-body .row').appendChild(div);
+        }
+      }
+
+      // Fermer la modale
+      const modalEl = document.getElementById('editRouteModal');
+      (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+      showAlert('Règle de routage mise à jour avec succès.');
+    } catch (err) {
+      showAlert('Échec de la mise à jour de la règle&nbsp;: ' + err.message, 'danger');
+    } finally {
+      btn.disabled = false; spinner.classList.add('d-none');
+    }
+  });
+})();
+</script>

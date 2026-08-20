@@ -31,7 +31,7 @@ def listRoutingRules(pagination):
 	return AuthenticatedUserTemplate(
 		Path(routes_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("routes").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("routes").render()
 
 
 @routes_blueprint.route('/route')
@@ -41,7 +41,7 @@ def newRoutingRule():
 	return AuthenticatedUserTemplate(
 		Path(routes_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
 		parsers=list(Parser.storage.list())
-	).handles_success_and_error().with_dictionnary().with_sidebar("routes").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("routes").render()
 
 
 @routes_blueprint.route('/route',methods=["POST"])
@@ -76,7 +76,7 @@ def viewRoutingRule(routingrule_id):
 	return AuthenticatedUserTemplate(
 		Path(routes_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
 		rule=routingrule, destinations=list(RouteDepositDetails.storage.list(rule_id=routingrule['id']))
-	).handles_success_and_error().with_dictionnary().with_sidebar("routes").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("routes").render()
 
 
 

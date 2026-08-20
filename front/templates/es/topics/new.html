@@ -1,0 +1,259 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Nuevo Tema - MqttRelay{% endblock %}
+{% block content %}
+
+<h1 class="mb-4" style="margin-top:50px;">Agregar Nuevo Tema MQTT</h1>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% if msgs %}
+    {% for category, msg in msgs %}
+      <div class="alert alert-{{ 'danger' if category=='error' else category }} alert-dismissible fade show" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('topics.newTopic') }}" class="needs-validation" novalidate>
+  {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+
+  <!-- Campos ocultos enviados al backend (coinciden con columnas mqtt_topic) -->
+  <input type="hidden" id="client_id" name="client_id" value="{{ request.form.get('client_id','') }}" required>
+  <input type="hidden" id="device_id" name="device_id" value="{{ request.form.get('device_id','') }}">
+  <input type="hidden" id="topic"     name="topic"     value="{{ request.form.get('topic','') }}" required>
+
+  <div class="row g-3">
+    <!-- 1) CLIENTE: <select> real con búsqueda -->
+    <div class="col-md-6">
+      <label for="client_select" class="form-label">Cliente</label>
+      <select id="client_select" class="form-select" aria-describedby="clientHelp" required>
+        {% if request.form.get('client_id') and request.form.get('client_name') %}
+          <option value="{{ request.form.get('client_id') }}" selected>{{ request.form.get('client_name') }}</option>
+        {% else %}
+          <option value="" selected disabled>Escriba para buscar clientes…</option>
+        {% endif %}
+      </select>
+      <div class="form-text" id="clientHelp">Busque y seleccione un cliente. Esto cargará sus temas no vinculados.</div>
+      <div class="invalid-feedback">Por favor, elija un cliente.</div>
+    </div>
+
+    <!-- 2) TEMAS NO VINCULADOS: <select> real con búsqueda -->
+    <div class="col-md-6">
+      <label for="topic_select" class="form-label">Tema no vinculado</label>
+      <select id="topic_select" class="form-select" aria-describedby="topicSelectHelp" disabled required>
+        <option value="" selected disabled>Elija primero un cliente…</option>
+      </select>
+      <div class="form-text" id="topicSelectHelp">Solo se muestran los temas aún no vinculados para este cliente.</div>
+      <div class="invalid-feedback">Por favor, elija un tema.</div>
+    </div>
+
+    <!-- Espejos de solo lectura (no enviados) -->
+    <div class="col-12">
+      <label for="topic_display" class="form-label">Tema elegido</label>
+      <input type="text" class="form-control" id="topic_display"
+             value="{{ request.form.get('topic','') }}"
+             placeholder="Se completará después de seleccionar un tema" readonly />
+    </div>
+
+    <div class="col-md-6">
+      <label for="device_display" class="form-label">Dispositivo (auto)</label>
+      <input type="text" class="form-control" id="device_display"
+             value="" placeholder="Completado automáticamente desde el tema seleccionado (puede estar vacío)"
+             readonly />
+    </div>
+
+    <!-- Campos opcionales -->
+    <div class="col-md-6">
+      <label for="description" class="form-label">Descripción (opcional)</label>
+      <input type="text" class="form-control" id="description" name="description"
+             placeholder="Descripción breve"
+             value="{{ request.form.get('description','') }}" maxlength="512" />
+    </div>
+
+    <div class="col-md-4">
+      <label for="qos_default" class="form-label">QoS predeterminado</label>
+      {% set qos_val = request.form.get('qos_default','0') %}
+      <select class="form-select" id="qos_default" name="qos_default">
+        <option value="0" {{ 'selected' if qos_val=='0' else '' }}>0 – Como máximo una vez</option>
+        <option value="1" {{ 'selected' if qos_val=='1' else '' }}>1 – Al menos una vez</option>
+        <option value="2" {{ 'selected' if qos_val=='2' else '' }}>2 – Exactamente una vez</option>
+      </select>
+    </div>
+
+    <div class="col-md-4 d-flex align-items-end">
+      <div class="form-check">
+        {% set active_val = request.form.get('active','1') %}
+        <input class="form-check-input" type="checkbox" value="1" id="active" name="active"
+               {{ 'checked' if active_val in ['1','true','on'] else '' }}>
+        <label class="form-check-label" for="active">Activo</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Agregar Tema</button>
+    <a href="{{ url_for('topics.listTopics') }}" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Tom Select (selects mejorados con búsqueda) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+<script>
+  async function fetchJSON(url){
+    const r = await fetch(url, { headers: { 'Accept':'application/json' }});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  const clientIdEl     = document.getElementById('client_id');
+  const deviceIdEl     = document.getElementById('device_id');
+  const topicHiddenEl  = document.getElementById('topic');
+
+  const topicDisplay   = document.getElementById('topic_display');
+  const deviceDisplay  = document.getElementById('device_display');
+
+  const clientSelectEl = document.getElementById('client_select');
+  const topicSelectEl  = document.getElementById('topic_select');
+
+  // Guardar payload para temas en un mapa (tema -> payload) para evitar problemas de sincronización
+  const topicPayload = new Map();
+
+  // Select de CLIENTE con búsqueda remota
+  const clientSelectTS = new TomSelect('#client_select', {
+    valueField: 'id',
+    labelField: 'name',
+    searchField: ['name'],
+    create: false,
+    allowEmptyOption: true,
+    placeholder: 'Escriba para buscar clientes…',
+    loadThrottle: 300,
+    load: async (query, callback) => {
+      if (!query || !query.trim()) return callback();
+      try {
+        const url = new URL('/clients', window.location.origin);
+        url.searchParams.set('name', query.trim());
+        url.searchParams.set('json', "true");
+        const data = await fetchJSON(url);
+        const items = (Array.isArray(data) ? data : (data.items || []))
+          .map(c => ({ id: c.id ?? c._id ?? c.uuid ?? '', name: c.name ?? c.title ?? '' }))
+          .filter(it => it.id && it.name);
+        callback(items);
+      } catch { callback(); }
+    },
+    onChange: async (clientId) => {
+      clientIdEl.value = clientId || '';
+
+      // Restablecer campos de tema/dispositivo
+      topicHiddenEl.value = '';
+      topicDisplay.value  = '';
+      deviceIdEl.value    = '';
+      deviceDisplay.value = '';
+
+      await loadUnlinkedTopicsForClient(clientId);
+    }
+  });
+
+  // Select de TEMA (opciones cargadas después de elegir cliente)
+  const topicSelectTS = new TomSelect('#topic_select', {
+    create: false,
+    searchField: ['text'],
+    allowEmptyOption: false,
+    placeholder: 'Elija un tema…',
+    onChange: (value) => {
+      const payload = topicPayload.get(value) || null;
+      // Rellenar ocultos + visualización
+      topicHiddenEl.value = value || '';
+      topicDisplay.value  = value || '';
+
+      if (payload && payload.device && payload.device.id){
+        deviceIdEl.value   = payload.device.id;
+        deviceDisplay.value= payload.device.label || ('#' + payload.device.id);
+      } else {
+        deviceIdEl.value   = '';
+        deviceDisplay.value= '';
+      }
+    }
+  });
+
+  // Cargar temas no vinculados para un cliente en el <select> de tema
+  async function loadUnlinkedTopicsForClient(clientId){
+    topicSelectEl.disabled = true;
+    topicSelectTS.clear(true);
+    topicSelectTS.clearOptions();
+    topicPayload.clear();
+
+    if (!clientId) return;
+
+    try {
+      const url = new URL('/unlinked_topics', window.location.origin);
+      url.searchParams.set('client_id', clientId);
+      url.searchParams.set('json', "true");
+      const data = await fetchJSON(url);
+
+      const items = (Array.isArray(data) ? data : (data.items || []))
+        .map(t => {
+          const devId    = t.device?.id ?? t.device_id ?? '';
+          const devLabel = ([t.device?.name,t.device_type?.vendor, t.device_type?.model, t.device_type?.serial].filter(Boolean).join(' ')) || (devId ? ('#'+devId) : '');
+          const topicStr = t.device?.topic || '';
+          const text     = devId ? `${topicStr} — dispositivo: ${devLabel}` : topicStr;
+          const payload  = { topic: topicStr, device: devId ? { id: devId, label: devLabel } : null };
+          return { value: topicStr, text, payload };
+        })
+        .filter(it => it.value);
+
+      if (!items.length){
+        topicSelectTS.addOption({ value: '', text: 'No hay temas no vinculados para este cliente' });
+        topicSelectTS.disable();
+        return;
+      }
+
+      items.forEach(it => {
+        topicSelectTS.addOption({ value: it.value, text: it.text });
+        topicPayload.set(it.value, it.payload);
+      });
+      topicSelectTS.refreshOptions(false);
+      topicSelectTS.enable();
+      topicSelectEl.disabled = false;
+
+      // Restaurar selección si el servidor re-renderizó con un tema
+      const existingTopic = "{{ request.form.get('topic','') }}".trim();
+      if (existingTopic && topicPayload.has(existingTopic)) {
+        topicSelectTS.setValue(existingTopic, true);
+      }
+    } catch {
+      topicSelectTS.clearOptions();
+      topicSelectTS.addOption({ value:'', text:'Error al cargar temas' });
+      topicSelectTS.disable();
+    }
+  }
+
+  // Validación de Bootstrap
+  (function(){
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(forms).forEach(function(form){
+      form.addEventListener('submit', function(event){
+        if (!clientIdEl.value) { event.preventDefault(); event.stopPropagation(); }
+        if (!topicHiddenEl.value) { event.preventDefault(); event.stopPropagation(); }
+        form.classList.add('was-validated');
+      }, false);
+    });
+  })();
+
+  // Al cargar: restaurar cliente/tema si lo proporciona el servidor
+  window.addEventListener('DOMContentLoaded', async () => {
+    const existingClientId   = "{{ request.form.get('client_id','') }}".trim();
+    const existingClientName = "{{ request.form.get('client_name','') }}".trim();
+    if (existingClientId && existingClientName) {
+      clientSelectTS.addOption({ id: existingClientId, name: existingClientName });
+      clientSelectTS.setValue(existingClientId, true);
+      await loadUnlinkedTopicsForClient(existingClientId);
+    }
+  });
+</script>
+{% endblock %}

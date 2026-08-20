@@ -1,0 +1,39 @@
+htmlCopy code<!-- Add Metric Modal -->
+<div class="modal fade" id="addMetricModal" tabindex="-1" aria-labelledby="addMetricLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" id="addMetricForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addMetricLabel">Añadir métrica</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <div class="mb-3">
+          <label for="key_name" class="form-label">Nombre de clave <span class="text-danger">*</span></label>
+          <input id="key_name" name="key_name" class="form-control" required maxlength="128"
+                 pattern="^[A-Za-z0-9_]+$" placeholder="e.g., soil_moisture">
+          <div class="form-text">Solo letras, números y guiones bajos.</div>
+          <div class="invalid-feedback">La clave debe ser solo alfanumérica/guion bajo.</div>
+        </div>
+        <div class="mb-3">
+          <label for="default_unit" class="form-label">Unidad predeterminada</label>
+          <input id="default_unit" name="default_unit" class="form-control" maxlength="32" placeholder="e.g., %">
+        </div>
+        <div class="mb-3">
+          <label for="description_metric" class="form-label">Descripción</label>
+          <textarea id="description_metric" name="description" class="form-control" rows="3" maxlength="512"
+                    placeholder="What does this metric represent?"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="saveMetricBtn" type="submit" class="btn btn-success">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Añadir métrica
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

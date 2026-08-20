@@ -1,0 +1,65 @@
+<!-- Add Device Modal -->
+<div class="modal fade" id="addDeviceModal" tabindex="-1" aria-labelledby="addDeviceLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" id="addDeviceForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addDeviceLabel">Ajouter un appareil</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" name="client_id" value="{{ client['id'] }}">
+        <div class="mb-3">
+          <label for="device_type_id" class="form-label">Type d'appareil</label>
+          <select id="device_type_id" name="device_type_id" class="form-select" required>
+            <option value="" selected disabled>Chargement des types d'appareils…</option>
+          </select>
+          <div class="form-text">Les types sont récupérés depuis <code>devices.listDevices</code>.</div>
+        </div>
+        <div class="mb-3">
+          <label for="device_name" class="form-label">Nom</label>
+          <input id="device_name" name="name" class="form-control" placeholder="ex. : Capteur de sol #1" required>
+        </div>
+        <div class="mb-3">
+          <label for="external_ref" class="form-label">Référence externe</label>
+          <input id="external_ref" name="external_ref" class="form-control" placeholder="Numéro de série fournisseur / identifiant personnalisé">
+        </div>
+        <div class="mb-3">
+          <label for="topic" class="form-label">Sujet</label>
+          <input id="topic" name="topic" class="form-control" placeholder="ex. : sensors/field-1/lse01/123456">
+        </div>
+
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="installed" name="installed">
+              <label class="form-check-label" for="installed">Installé</label>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="working" name="working">
+              <label class="form-check-label" for="working">En service</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <label for="emission_rate_seconds" class="form-label">Fréquence d'émission (secondes)</label>
+          <input type="number" min="0" step="1" id="emission_rate_seconds" name="emission_rate_seconds" class="form-control" placeholder="ex. : 300">
+        </div>
+
+        <div class="mt-3">
+          <label for="metadata_json" class="form-label">Métadonnées (JSON, optionnel)</label>
+          <textarea id="metadata_json" name="metadata_json" class="form-control" rows="3" placeholder='{"location":"champ nord"}'></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button id="saveDeviceBtn" type="submit" class="btn btn-success">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Ajouter un appareil
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

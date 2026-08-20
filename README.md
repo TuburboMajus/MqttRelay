@@ -1,88 +1,260 @@
 # MqttRelay — MQTT Ingest, Parse & Route with a Web Dashboard
 
-MqttRelay is a small platform that:
+MqttRelay is a multi-tenant **IoT data ingestion and distribution platform**. It connects to an
+MQTT broker, persists every incoming message, turns raw payloads into **normalized time-series
+metrics** through versioned, per-client **parsers**, and finally **dispatches** those metrics to
+the correct downstream sink (per client) according to configurable routing rules. A **web
+dashboard** lets operators manage the whole pipeline — clients, devices, topics, parsers, metrics,
+routes, destinations, users and encryption — and monitor activity.
 
-- Subscribes to **MQTT topics** and stores incoming messages.
-- **Parses** those messages into normalized metrics (time series).
-- **Routes** results to the right client/pipeline based on **client, topic, device, and/or content** rules.
-- Ships with a **web dashboard** to manage clients, devices, parsers, metrics, and crypto settings—and to monitor activity.
+```
+MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
+                                     │
+              systemd timer: mqtt_transfer (every ~10s)
+                                     ▼
+              resolve sender: topic → device → client
+                                     ▼
+              select routing_rule (priority + conditions DSL)
+                                     ▼
+              run parser: db/parsers/<name>_<version>.py
+                                     ▼
+              extraction + parsed_point (normalized)
+                                     ▼
+              route_deposit → client_destination → dispatcher
+                                     ▼
+                            client's own database (MySQL)
+```
 
 ---
 
 ## Table of Contents
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [Security & Encryption (reversible)](#security--encryption-reversible)
+- [What it does](#what-it-does)
+- [Project layout](#project-layout)
+- [Tech stack](#tech-stack)
+- [Data flow (end to end)](#data-flow-end-to-end)
+- [Data model](#data-model)
+- [Authoring parsers](#authoring-parsers)
+- [Routing rules & condition DSL](#routing-rules--condition-dsl)
+- [Security & Encryption](#security--encryption-reversible)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Running](#running)
 - [Dashboard](#dashboard)
-  - [Clients & Devices](#clients--devices)
-  - [Parsers](#parsers)
-  - [Settings](#settings)
-- [REST Endpoints (selected)](#rest-endpoints-selected)
-- [Development Notes](#development-notes)
-- [Troubleshooting](#troubleshooting)
+- [REST Endpoints](#rest-endpoints)
+- [Known issues / rough edges](#known-issues--rough-edges)
 - [License](#license)
 
 ---
 
-## Features
+## What it does
 
-- **MQTT ingestion**: subscribe to one or more topics, store raw messages.
-- **Routing**: forward parsed outputs to the correct client/pipeline based on client/topic/device/content.
-- **Parsers**:
-  - Versioned parser registry (`name`, `version`, `language`, `config_schema`, `active`).
-  - Execution records (`extractions`) and normalized points (`parsed_points`) to a known catalog of metrics.
-- **Dashboard** (Flask + Jinja + Bootstrap 5):
-  - Clients (view/edit), Devices (CRUD)
-  - Parsers (list, create, view/edit/delete)
-  - Settings:
-    - **User**: edit profile (email with confirmation), language, analytics tracking, change password
-    - **System**: Metric Catalog (add/delete), **Secrets & Encryption** (choose reversible encryption and re-encrypt stored secrets)
-- **Crypto**: Reversible encryption for third-party service credentials (e.g., DB logins), with key rotation and re-encrypt tooling.
-
----
-
-## Architecture
-
-- **Ingestor**: Subscribes to MQTT broker(s); persists messages (table `mqtt_message`).
-- **Parser layer**: Executes the configured parser (Python/JS/SQL, etc.) and writes:
-  - `extractions` (one per parsed message, with success/error info)
-  - `parsed_points` (normalized time series with metric IDs/units/quality, etc.)
-- **Router**: Uses client/topic/device/content to route outputs to the correct downstream pipeline.
-- **Dashboard**: Flask app with Jinja2 pages & Bootstrap 5/Icons.
+- **MQTT ingestion** — subscribes to the broker (wildcard pattern `+/+/+`) and stores every raw
+  message in the `mqtt_message` table.
+- **Parsing** — a recurring background job runs a versioned parser against each unprocessed
+  message and writes normalized points to `parsed_point`, keyed to a shared `metric_catalog`.
+- **Routing** — routing rules map (client, topic, device) to a parser and a list of
+  destinations, with optional content-based conditions and priorities.
+- **Dispatching** — parsed points are delivered to each client's own `client_destination`
+  (currently a **MySQL** sink; pluggable via `services/mqtt_transfer/dispatchers/`).
+- **Web dashboard** — Flask + Jinja2 + Bootstrap 5 UI to manage everything, in multiple
+  languages (EN/FR/ES/AR).
+- **Secrets protection** — reversible encryption for third-party service credentials
+  (e.g. destination DB passwords), with key rotation and re-encryption.
 
 ---
 
+## Project layout
+
+```
+.
+├── run.py                        # Flask app factory + dev entrypoint
+├── context.py                    # Registers entities/joins/clusters as globals; PARSERS_DB
+├── config.toml / .template       # Runtime config (DB, MQTT, Flask) / template used by installer
+├── dictionnary.yml               # UI strings per language
+├── requirements.txt
+├── run.sh                        # gunicorn launcher for the dashboard
+├── core/
+│   ├── entity/                   # Temod entities = DB tables (mqtt.py, iot.py, client.py,
+│   │                             #   parser.py, user.py, app.py)
+│   ├── join/                     # Temod joins (client.py, iot.py, mqtt.py, user.py)
+│   └── constraints.py            # EqualityConstraint definitions used by joins
+├── blueprints/                   # Flask blueprints (one per domain)
+│   ├── auth.py  clients.py  dashboard.py  destinations.py  devices.py
+│   ├── general.py  metrics.py  mqtt.py  parsers.py  routes.py  topics.py  users.py
+│   └── dashboards/               # Metric computations behind dashboard API endpoints
+├── services/mqtt_transfer/       # The background ingest→parse→dispatch job
+│   ├── mqtt_transfer.py          # MqttTransfer worker (process loop)
+│   ├── dispatchers/              # Output sinks (mysql.py)
+│   └── mqtt_transfer.{service,timer,sh}  # systemd unit/timer/launcher
+├── db/parsers/                   # Parser source modules (DirectoryStorage)
+├── tools/
+│   ├── crypto_envelopes.py       # AES-GCM / ChaCha20-Poly1305 / AES-CBC+HMAC
+│   └── json_conditions.py        # MongoDB-style condition DSL evaluator
+├── front/
+│   ├── renderers/                # Template rendering helpers (Base/AuthenticatedUser)
+│   └── templates/                # Per-language Jinja2 templates (en/, es/, fr/, ar/)
+├── install/
+│   ├── setup.py                  # Interactive installer (DB, admin, MQTT, crypto, service)
+│   ├── common_funcs.py
+│   └── storages/dbscheme.sql     # Full MySQL schema
+└── logs/                         # Rotating logs (MqttTransfer.log*)
+```
+
+---
+
+## Tech stack
+
+| Concern | Choice |
+| --- | --- |
+| Web framework | Flask 3 (+ `flask_mqtt`, `flask_login`) |
+| ORM / persistence | [`temod`](https://pypi.org/project/temod/) + `temod_flask` (entity/join/cluster holders) |
+| Database | MySQL 8 (`PyMySQL`, `mysql.connector`) |
+| Realtime ingestion | `flask-mqtt` (broker subscribe, `on_message` hook) |
+| Background job | Python worker driven by a `systemd` **oneshot** service + **timer** |
+| Crypto | `cryptography` (AES-GCM, ChaCha20-Poly1305, AES-CBC+HMAC) |
+| Frontend | Jinja2 + Bootstrap 5 + Bootstrap Icons + fetch API |
+| i18n | `dictionnary.yml` + per-language template folders |
+| Server | `gunicorn` (via `run.sh`) or Flask dev server (`run.py`) |
+
+> Django is listed in `requirements.txt` but is used **only** for the
+> `url_has_allowed_host_and_scheme` / `iri_to_uri` utilities in `blueprints/auth.py`.
+
+---
+
+## Data flow (end to end)
+
+1. **Ingest** — `blueprints/mqtt.py` registers `on_connect` (subscribes to `+/+/+`) and
+   `on_message`. Each MQTT message is written to `mqtt_message` with
+   `client` (first topic segment), `topic`, `payload`, `qos`, `at`, and `processed=False`.
+2. **Poll** — the `mqtt_transfer.timer` fires `mqtt_transfer.service` every ~10 s, which runs
+   `services/mqtt_transfer/mqtt_transfer.py`. A `job` row prevents concurrent runs.
+3. **Resolve sender** — `retrieve_sender()` looks up the `mqtt_topic` (must be `active`), then the
+   `device` and its `client`.
+4. **Select route** — `select_route()` collects `routing_rule`s matching the client/topic/device,
+   evaluates the optional Mongo-style `conditions` DSL (see below), then picks the lowest
+   `priority`, breaking ties by newest `created_at`.
+5. **Parse** — the rule's `parser` is loaded (`db/parsers/<name>_<version>`), and its
+   `parse(payload, **parser_config)` is executed. The result is a dict keyed by **metric catalog
+   IDs** (integer keys) plus an optional `at` timestamp; non-integer keys become `meta_json`.
+6. **Persist** — one `extraction` row is written per message, plus one `parsed_point` per metric
+   (typed as `num/str/bool/json` with a `unit` and `quality`).
+7. **Dispatch** — for each `route_deposit` of the rule, the corresponding `client_destination` is
+   loaded, its dispatcher instantiated (keyed by `destination.type`), and the points are sent. A
+   `dispatch` row records the outcome (`queued/sent/failed/…`).
+8. **Ack** — on success the `mqtt_message` row is marked `processed`.
+
+---
+
+## Data model
+
+Defined in `core/entity/` and instantiated in `install/storages/dbscheme.sql`.
+
+| Domain | Tables |
+| --- | --- |
+| App | `mqtt_relay`, `language`, `job` |
+| Users | `privilege`, `user` (password is **bcrypt**) |
+| Tenants | `client`, `client_destination` |
+| Devices | `device_type`, `device`, `latest_value` |
+| MQTT | `mqtt_topic`, `mqtt_broker`, `mqtt_message` |
+| Parsing | `parser`, `extraction`, `metric_catalog`, `parsed_point` |
+| Routing | `routing_rule`, `route_deposit`, `dispatch` |
+| Crypto | `crypto_config`, `crypto_key` |
+
+Joins (`core/join/`) provide the composite views used by the UI and the worker, e.g.
+`RoutingRuleFile` (rule + topic + client + device + parser), `MqttTopicFile`
+(topic + client + device), `DeviceFile` (device + device type) and `UserAccount`
+(user + privilege).
+
+---
+
+## Authoring parsers
+
+A parser is a row in `parser` (`name`, `version`, `language`, optional `config_schema`) whose
+**code lives in `db/parsers/`** as a file named:
+
+```
+<name lowercase, spaces → _>_<version, dots → _>
+```
+
+For example, parser `LSE01 Soil` v`1.0.0` maps to `db/parsers/lse01_soil_1_0_0.py`.
+The dashboard writes both `lse01_soil_1_0_0` (source kept by `DirectoryStorage`) and
+`lse01_soil_1_0_0.py` (importable Python module).
+
+The module must export a single function:
+
+```python
+def parse(data, **config):
+    """
+    data    : decoded payload (dict) of the MQTT message
+    config  : route.parser_config (JSON object)
+    returns : dict {<metric_catalog_id>: <value>, ...}  # integer keys = metrics
+              optional "at" key overrides the point timestamp
+              non-integer keys are stored in meta_json
+    """
+    return {
+        1: data.get("Temp_SOIL"),      # 1 = metric_catalog id (e.g. soil temperature)
+        2: data.get("Water_SOIL"),
+    }
+```
+
+The only supported language today is `python` (`load_parse_function` raises otherwise).
+
+See `db/parsers/lse01_parser_1_0_0.py` for a minimal real example.
+
+---
+
+## Routing rules & condition DSL
+
+A `routing_rule` targets a `client`, optionally a `topic` and/or `device`, a `parser`, a
+`parser_config`, a numeric `priority` (lower wins) and an optional `conditions` JSON. It is linked
+to one or more `client_destination`s through `route_deposit`.
+
+`conditions` is evaluated by `tools/json_conditions.py` against this context:
+
+```json
+{
+  "device":       { ...device row... },
+  "device_type":  { ...device_type row... },
+  "topic":        { ...mqtt_topic row... },
+  "message":      { ...mqtt_message row... }
+}
+```
+
+Supported operators (MongoDB-style): `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`,
+`$exists`, `$regex`, `$contains`, `$startswith`, `$endswith`, `$between`, `$elemMatch`, plus
+`$and`, `$or`, `$not` and shorthand equality (`{"field": value}`). Dotted paths
+(`device.metadata.foo`) are supported.
+
+---
 
 ## Security & Encryption (reversible)
 
-Used **only** for *external* credentials (DBs/services), not for user login passwords.
+Used **only** for *external* credentials (destination DBs/services) — **never** for user login
+passwords, which remain **bcrypt** (`BCryptedAttribute` on `user.password`).
 
-- Algorithms (configurable in Settings → System → Secrets & Encryption):
+- Algorithms (configured in Settings → System → Secrets & Encryption):
   - **AES-256-GCM** (recommended)
   - **ChaCha20-Poly1305**
-  - **AES-256-CBC + HMAC-SHA256** (Encrypt-then-MAC)
-- Keys: 32-byte keys (outside DB). For `key_source=env`, set keys via env var:
-  - `TECHDASH_ENC_KEY_<KEY_ID>` (e.g., `TECHDASH_ENC_KEY_PRIMARY`)
-- Token format: `v<cfg_version>.<algorithm>.<parts…>`
-- Rotation: bump config version, update key material, **Re-encrypt** existing rows from the Settings page.
-- Sample Python module: `crypto_envelopes.py` with `encrypt_data/decrypt_data` and specific helpers.
-
-> User login passwords in the `user` table should remain **one-way hashed** (e.g., bcrypt). The reversible crypto here is **not** for user authentication passwords.
+  - **AES-256-CBC + HMAC-SHA256** (encrypt-then-MAC, HKDF-derived subkeys)
+- Keys are 32 bytes and live **outside** the DB for `key_source=env`:
+  - `MQTT_RELAY_ENC_KEY_<KEY_ID>` (e.g. `MQTT_RELAY_ENC_KEY_PRIMARY`)
+- Token format: `v1.<algorithm>.<base64 parts…>`
+- Rotation: bump config version, replace the key, then **Re-encrypt** existing rows from the
+  Settings page (`crypto_config`, `crypto_key` and the `/crypto*` endpoints).
+- Implementation: `tools/crypto_envelopes.py`, wrapped by the `CryptoConfig` / `CryptoKey`
+  entities in `core/entity/app.py`.
 
 ---
 
 ## Installation
 
 1. **Prerequisites**
-   - Python 3.10+ (recommended)
+   - Python 3.10+
    - MySQL 8.0+
-   - `virtualenv` / `venv`
-   - `systemd` (for the service)
-   - Build essentials for any native wheels in `requirements.txt`
+   - `venv`
+   - `systemd` (for the background service/timer)
+   - Build tooling for native wheels in `requirements.txt`
 
 2. **Create the database**
    ```bash
@@ -104,175 +276,153 @@ Used **only** for *external* credentials (DBs/services), not for user login pass
 
 4. **Run the installer**
    ```bash
-   # The installer prompts for DB credentials and sets up schema/config/service
    sudo venv/bin/python install/setup.py
    ```
-   During install you will:
-   - Provide **MySQL** connection info.
-   - Seed core tables (incl. `crypto_config`).
-   - Register a systemd service named **`mqtt_transfer`**.
+   The installer prompts for, and then applies:
+   - **MySQL** connection info (it drops/recreates the database — confirm if it already exists),
+   - an **admin user** (email + password),
+   - the **MQTT broker** (URL, port, credentials, TLS),
+   - the **crypto key source** (`env` recommended) and master key,
+   - the **systemd** unit + timer (installed as `mqtt_transfer.service` / `mqtt_transfer.timer`).
 
-5. **Enable and start the service**
+   It writes `config.toml` from `config.toml.template`, and (for `key_source=env`) a `.env` file
+   containing `MQTT_RELAY_ENC_KEY_PRIMARY`.
+
+5. **Enable and start the background job**
    ```bash
-   sudo systemctl enable mqtt_transfer
-   sudo systemctl start mqtt_transfer
-   sudo systemctl status mqtt_transfer
+   sudo systemctl enable --now mqtt_transfer.timer
+   systemctl list-timers mqtt_transfer.timer
    ```
 
 ---
 
 ## Configuration
 
-The installer will create a config.toml file in MqttRelay's root directory. Here are the main configuration:
+`config.toml` (generated from `config.toml.template`) has four sections:
 
 ```toml
-# Flask
+[app]
 host = "0.0.0.0"
-port = #web app port
-ssl = false # set to true if directly served with ssl 
+port = 23909
+threaded = true
+debug = true
+ssl = false                    # serve HTTPS directly if true
 ssl_key = "resources/key.pem"
 ssl_cert = "resources/cert.pem"
-ssl_encapsulated = # set to true if served behind a reverse proxy 
-secret_key = # leaving it empty will generate a new one each server launch
-default_language="fr"
+ssl_encapsulated = false       # true when behind a reverse proxy
+templates_folder = "front/templates"
+static_folder = "front/static"
+secret_key = ""                # empty → generated at launch
+default_language = "fr"
 
 [mqtt]
-broker_url = # Mqtt Broker url
-broker_port = # Mqtt Broker port
-username = # Mqtt Broker user
-password = # Mqtt Broker password
+broker_url = "localhost"
+broker_port = 1883
+username = ""
+password = ""
+keepalive = 0
+tls_enabled = false
+
+[temod]
+bound_database = "mysql"
+core_directory = "core"
+
+[storage.credentials]
+host = "127.0.0.1"
+port = 3306
+database = "mqtt"
+user = "..."
+password = "..."
 ```
 
-> The installer can persist these in a systemd environment file for `mqtt_transfer` (or you can manage them with your secrets manager).
+> `config.toml` and `.env` contain secrets and must **never** be committed. The installer
+> generates them locally.
 
 ---
 
 ## Running
 
-- **Service** (for parsed data distribution on clients):
-  ```bash
-  sudo systemctl enable --now mqtt_transfer
-  journalctl -u mqtt_transfer -f
-  ```
-
-- **Web dashboard**:
+- **Web dashboard** (production, via gunicorn):
   ```bash
   source venv/bin/activate
-  ./run.sh
+  ./run.sh                 # reads app.prod/port/ssl from config.toml
+  ```
+  For development you can also run `python run.py` directly (Flask dev server).
+
+- **Background ingest→parse→dispatch** (systemd timer):
+  ```bash
+  sudo systemctl enable --now mqtt_transfer.timer
+  journalctl -u mqtt_transfer -f
+  # or one-shot, manually:
+  venv/bin/python services/mqtt_transfer/mqtt_transfer.py --root-dir . --logging-dir logs
   ```
 
 ---
 
 ## Dashboard
 
-### Clients & Devices
+The dashboard is split across the following pages (all behind login):
 
-- **Clients page**: list/view/edit client profile.
-- **Client view**:
-  - Edit client details (AJAX PUT to `clients.editClient`).
-  - Devices table with add/delete:
-    - Fields include `name`, `device_type_id`, `external_ref`, `topic`, `installed`, `working`, **emission_rate (seconds)**, optional `metadata_json`.
-    - Device types are fetched from `devices.listDevices`.
-    - Endpoints used: `clients.addDevice` (POST), `clients.deleteDevice` (DELETE).
-  - Stats widgets: Projects, Latest Data Point, Invoices.
-
-### Parsers
-
-- **List parsers**: ID, name, version, language, active status, description.
-- **Create parser** (`parsers.createParser`):
-  - Name **alphanumeric + spaces only**.
-  - Version **`x.x.x`** (semantic: digits only).
-  - Optional `language` (`python`, `javascript`, `sql`, …).
-  - Optional `config_schema` (JSON) to drive UI validation/auditing.
-- **View/Edit/Delete parser**:
-  - Edit modal enforces same name/version rules, formats JSON, toggles Active.
-  - Delete uses `parsers.deleteParser`.
-
-Schema recap:
-- `parsers`, `extractions`, `parsed_points`, `metric_catalog` (see [Database Schema](#database-schema-high-level)).
-
-### Settings
-
-Two tabs:
-
-1. **User**
-   - Profile: email (with **Confirm Email** when changed), language, “Allow analytics tracking”.
-   - Change Password: current, new (min 8), confirm.
-
-2. **System**
-   - **Metric Catalog**: add/delete known metrics:
-     - `key_name` (alphanumeric/underscore), `default_unit`, `digupagri_ref` (3 chars), `description`.
-     - Endpoints: `metrics.createMetric` (POST), `metrics.deleteMetric` (DELETE).
-   - **Secrets & Encryption**:
-     - Choose algorithm: **AES-256-GCM**, **ChaCha20-Poly1305**, **AES-256-CBC+HMAC**.
-     - Choose key source: `env` (recommended), `kms` (custom integration), or `db`.
-     - Set key alias/ID, IV/tag sizes, encoding.
-     - **Test** encrypt/decrypt, **Rotate** key, **Re-encrypt** stored secrets.
-     - Endpoints:
-       - `GET  /crypto/config`          → `crypto.getConfig`
-       - `PUT  /crypto/config`          → `crypto.updateConfig`
-       - `POST /crypto/test`            → `crypto.test`
-       - `POST /crypto/rotate`          → `crypto.rotateKey`
-       - `POST /crypto/reencrypt`       → `crypto.reencrypt`
+- **Dashboard** — operational KPIs exposed as JSON endpoints:
+  `ingest_rate`, `parse_success`, `dispatch_success`, `processing_backlog`,
+  `throughput_series`, `dispatch_series` (computed in `blueprints/dashboards/`).
+- **Clients** — list/create/view/edit/delete clients; per client: devices, destinations and
+  simple availability stats.
+- **Devices** — manage **device types** (`vendor`, `model`, `kind`, `capabilities`,
+  `payload_schema`, `defaults_json`). Individual devices are managed from their client page.
+- **Topics** — declare/link MQTT topics (`topic`, `description`, `qos_default`, `active`,
+  `client_id`, `device_id`) and list unlinked topics.
+- **Parsers** — versioned parser registry; view/edit the parser source code (stored in
+  `db/parsers/`).
+- **Metrics** — the shared `metric_catalog` (`key_name`, `default_unit`, `description`).
+- **Routes** — routing rules: client/topic/device, parser + parser config, priority,
+  conditions DSL, and linked destinations (via `route_deposit`).
+- **Destinations** — per-client sinks (`type`, host/port/database/credentials, `options_json`).
+- **Users** — user management.
+- **Settings** — profile (email, language) + password change; and **System**:
+  - Metric Catalog add/delete
+  - **Secrets & Encryption**: choose algorithm/key source/key id, test, rotate, re-encrypt.
 
 ---
 
-## REST Endpoints (selected)
+## REST Endpoints
 
-> Names as referenced by templates/scripts; adapt to your Flask blueprint layout.
+> Blueprint endpoint names (function names) referenced by templates/scripts.
 
-- **Clients**
-  - `GET  clients.listClients`
-  - `GET  clients.viewClient(client_id)`
-  - `PUT  clients.editClient(client_id)`
-  - `POST clients.addDevice(client_id)`
-  - `DELETE clients.deleteDevice(client_id, device_id)`
-
-- **Devices**
-  - `GET  devices.listDevices` (returns device type options for UI)
-
-- **Parsers**
-  - `GET  parsers.listParsers`
-  - `GET  parsers.viewParser(parser_id)`
-  - `GET  parsers.newParser`
-  - `POST parsers.createParser`
-  - `PUT  parsers.updateParser(parser_id)`
-  - `DELETE parsers.deleteParser(parser_id)`
-
-- **Settings**
-  - **User**
-    - `PUT users.editUser(user_id)` (email, language, track)
-    - `PUT users.changePassword(user_id)`
-  - **Metrics**
-    - `POST metrics.createMetric`
-    - `DELETE metrics.deleteMetric(metric_id)`
-  - **Crypto**
-    - `GET/PUT /crypto/config`
-    - `POST   /crypto/test`
-    - `POST   /crypto/rotate`
-    - `POST   /crypto/reencrypt`
+- **Auth**: `GET/POST /login`, `GET/POST /signup`, `GET/POST /logout`
+- **Clients**: `GET /clients`, `GET/POST /client`, `GET/PUT/DELETE /client/<id>`,
+  `POST /client/<id>/device`, `PUT/DELETE /client/<id>/device/<device_id>`,
+  `POST /client/<id>/destination`, `PUT/DELETE /client/<id>/destination/<destination_id>`
+- **Devices (device types)**: `GET /devices`, `GET/POST /device`, `GET/PUT/DELETE /device/<id>`,
+  `GET /device/<id>/example`, `GET /device/unique`
+- **Topics**: `GET /topics`, `GET /unlinked_topics`, `GET/POST /topic`, `GET/PUT/DELETE /topic/<id>`
+- **Parsers**: `GET /parsers`, `GET/POST /parser`, `GET/PUT/DELETE /parser/<id>`
+- **Metrics**: `GET /metrics`, `GET/POST /metric`, `GET/PUT/DELETE /metric/<id>`
+- **Routes**: `GET /routes`, `GET/POST /route`, `GET/PUT/DELETE /route/<uuid>`
+- **Destinations**: `GET /client_destinations`, `GET/POST /client_destination`,
+  `GET/PUT/DELETE /client_destination/<id>`, `GET /client_destination/<id>/example`
+- **Users**: `GET /users`, `GET/POST /user`, `GET/PUT/DELETE /user/<uuid>`,
+  `PUT /user/<uuid>/password`
+- **Settings/Crypto**: `GET /settings`, `GET /crypto`, `PUT /crypto/update`, `POST /crypto/test`,
+  `POST /crypto/rotate_key`, `POST /crypto`
+- **Dashboard API**: `GET /dashboard/api/critical/{ingest_rate,parse_success,dispatch_success,processing_backlog,throughput_series,dispatch_series}`
 
 ---
 
-## Development Notes
+## Known issues / rough edges
 
-- **Frontend**: Jinja2 templates using **Bootstrap 5** and **Bootstrap Icons**, with unobtrusive JS (fetch API + CSRF header).
-- **Validation**:
-  - Parser **name**: `^[A-Za-z0-9 ]+$`
-  - Parser **version**: `^[0-9]+(\.[0-9]+){2}$` (e.g., `1.2.3`)
-  - Metric **key_name**: `^[A-Za-z0-9_]+$`
-- **Crypto module**: `crypto_envelopes.py` implements all three reversible ciphers with versioned tokens.
-
----
-
-## Troubleshooting
-
-- **Data isn't sent to the clients**
-  - `systemctl status mqtt_transfer` and `journalctl -u mqtt_transfer -f`
-  - Verify `DATABASE_URL`, MQTT env vars, and that MySQL is reachable.
-- **Encryption config errors**
-  - Ensure `MQTT_RELAY_ENC_KEY_<KEY_ID>` is set if `key_source=env` and is **32 bytes** (base64 or hex).
-  - After rotation, run **Re-encrypt** in Settings to migrate existing secrets.
+- `blueprints/destinations.py` and `blueprints/users.py` have **no Jinja templates**
+  (`front/templates/<lang>/destinations/` and `front/templates/<lang>/users/` don't exist), so
+  their list/new/view pages still fail with `TemplateNotFound`; only the JSON/redirect routes
+  work. `front/templates/<lang>/topics/view.html` and the `metrics/` templates are also missing.
+- `blueprints/clients.py` (`viewClient`) uses the `DeviceFile` **join** with `.storage`, which
+  may not expose a storage like entities do.
+- `blueprints/dashboards/*.py` contain vestigial raw-SQL code after early returns; the active
+  implementations use Temod storage queries.
+- `config.toml`, `.env` and `logs/` are already excluded by `.gitignore`. Note that `db/` is
+  also ignored, so the parser source files under `db/parsers/` are **not** version-controlled —
+  decide whether that is intended for your workflow.
+- `core/join/` has no `__init__.py`; joins are discovered by Temod's `init_holders` instead.
 
 ---
 

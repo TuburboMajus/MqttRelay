@@ -1,0 +1,83 @@
+<!-- Editar Modal de Analizador -->
+<div class="modal fade" id="editParserModal" tabindex="-1" aria-labelledby="editParserLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <form class="modal-content" id="editParserForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editParserLabel">Editar Analizador</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="e_name" class="form-label">Nombre <span class="text-danger">*</span></label>
+            <input id="e_name" name="name" class="form-control" required pattern="^[A-Za-z0-9 ]+$" maxlength="128"
+                   value="{{ parser['name'] }}" aria-describedby="nameHelp">
+            <div id="nameHelp" class="form-text">Solo letras, números y espacios.</div>
+            <div class="invalid-feedback">Usa solo letras, números y espacios.</div>
+          </div>
+
+          <div class="col-md-3">
+            <label for="e_version" class="form-label">Versión <span class="text-danger">*</span></label>
+            <input id="e_version" name="version" class="form-control" required maxlength="32"
+                   pattern="^[0-9]+(\.[0-9]+){2}$" value="{{ parser['version'] }}"
+                   aria-describedby="versionHelp">
+            <div id="versionHelp" class="form-text">Formato <code>x.x.x</code> (ej., 1.2.3).</div>
+            <div class="invalid-feedback">La versión debe coincidir con <code>x.x.x</code>.</div>
+          </div>
+
+          <div class="col-md-3">
+            <label for="e_language" class="form-label">Lenguaje</label>
+            <select id="e_language" name="language" class="form-select">
+              {% set langs = ['python','javascript','sql','bash','go','rust'] %}
+              <option value="" {{ '' == (parser['language'] or '') and 'selected' or '' }}>— Seleccionar —</option>
+              {% for lang in langs %}
+              <option value="{{ lang }}" {{ lang == (parser['language'] or '') and 'selected' or '' }}>{{ lang|capitalize }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-12">
+            <label for="e_description" class="form-label">Descripción</label>
+            <textarea id="e_description" name="description" class="form-control" rows="3">{{ parser['description'] or '' }}</textarea>
+          </div>
+
+          <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+              <label for="e_config_schema" class="form-label mb-0">Esquema de Configuración (JSON)</label>
+              <div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnFormatJson">
+                  <i class="bi bi-braces"></i> Formatear JSON
+                </button>
+                <span id="jsonStatus" class="ms-2 small text-muted"></span>
+              </div>
+            </div>
+            <textarea id="e_config_schema" name="config_schema" class="form-control font-monospace" rows="10">{% if parser['config_schema'] %}{{ parser['config_schema']|tojson(indent=2) }}{% endif %}</textarea>
+            <div class="form-text">
+              JSON Schema opcional que describe la configuración del analizador.
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="e_active" name="active" {{ parser.active and 'checked' or '' }}>
+              <label class="form-check-label" for="e_active">Activo</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="saveEditBtn" type="submit" class="btn btn-primary">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Guardar cambios
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

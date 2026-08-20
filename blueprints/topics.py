@@ -33,7 +33,7 @@ def listTopics(pagination):
 	return AuthenticatedUserTemplate(
 		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("topics").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
 
 
 @topics_blueprint.route('/unlinked_topics')
@@ -48,7 +48,7 @@ def listUnlnkedTopics(pagination):
 	return AuthenticatedUserTemplate(
 		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("topics").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
 
 
 @topics_blueprint.route('/topic')
@@ -57,7 +57,7 @@ def listUnlnkedTopics(pagination):
 def newTopic():
 	return AuthenticatedUserTemplate(
 		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_sidebar("topics").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
 
 
 @topics_blueprint.route('/topic',methods=["POST"])
@@ -80,7 +80,7 @@ def viewTopic(topic_id):
 	return AuthenticatedUserTemplate(
 		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
 		topic=topic,
-	).handles_success_and_error().with_dictionnary().with_sidebar("topics").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
 
 
 
@@ -96,11 +96,6 @@ def editTopic(form, topic_id):
         **{field: form.get(field, topic[field]) for field in MqttTopic.UPDATABLE_FIELDS}
     )
 
-    if form.get('code') is not None:
-    	code_filename = "_".join([topic['name'].lower().replace(" ","_"), topic['version'].lower().replace('.','_')])
-    	TOPICS_DB.write(code_filename, form['code'], mode="")
-    	code_filename_with_suffix = f"{code_filename}.{MqttTopic.FILE_EXTENSIONS[topic['language'].lower()].lower()}"
-    	TOPICS_DB.write(code_filename_with_suffix, form['code'], mode="")
 
     MqttTopic.storage.updateOnSnapshot(topic)
     return {"status":"updated", "data":topic.to_dict()}

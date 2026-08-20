@@ -35,7 +35,7 @@ def listParsers(pagination):
 	return AuthenticatedUserTemplate(
 		Path(parsers_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("parsers").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("parsers").render()
 
 
 @parsers_blueprint.route('/parser')
@@ -44,7 +44,7 @@ def listParsers(pagination):
 def newParser():
 	return AuthenticatedUserTemplate(
 		Path(parsers_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_sidebar("parsers").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("parsers").render()
 
 
 @parsers_blueprint.route('/parser',methods=["POST"])
@@ -77,7 +77,7 @@ def viewParser(parser_id):
 	return AuthenticatedUserTemplate(
 		Path(parsers_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
 		parser=parser, code=code, metrics=list(Metric.storage.list())
-	).handles_success_and_error().with_dictionnary().with_sidebar("parsers").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("parsers").render()
 
 
 

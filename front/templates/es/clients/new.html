@@ -1,0 +1,54 @@
+{% extends "/common/layouts/base.html" %}
+{% block title %}Nuevo cliente - MqttRelay{% endblock %}
+{% block content %}
+<h1 class="mb-4" style="margin-top: 50px;">Añadir nuevo cliente</h1>
+
+<form method="POST" action="{{ url_for('clients.newClient') }}">
+  <div class="mb-3">
+    <label for="slug" class="form-label">Slug del cliente</label>
+    <input
+      type="text"
+      class="form-control"
+      id="slug"
+      name="slug"
+      placeholder="unique-client-slug"
+      value="{{unused_slugs[0]}}"
+      required
+      pattern="^[a-z0-9-]{1,64}$"
+      title="Lowercase letters, numbers, and hyphens only, max 64 characters"
+      autofocus
+    />
+    <div class="form-text">Identificador único (letras minúsculas, números, guiones, máx. 64 caracteres)</div>
+  </div>
+  <div class="mb-3">
+    <label for="name" class="form-label">Nombre del cliente</label>
+    <input
+      type="text"
+      class="form-control"
+      id="name"
+      name="name"
+      placeholder="Enter client name"
+      required
+    />
+  </div>
+  <div class="mb-3">
+    <label for="contact_email" class="form-label">Correo de contacto (opcional)</label>
+    <input
+      type="email"
+      class="form-control"
+      id="contact_email"
+      name="contact_email"
+      placeholder="contact@example.com"
+    />
+  </div>
+  <div class="mb-3">
+    <label for="status" class="form-label">Estado</label>
+    <select class="form-select" id="status" name="status" required>
+      <option value="active" selected>Activo</option>
+      <option value="paused">En pausa</option>
+      <option value="disabled">Deshabilitado</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary">Añadir cliente</button>
+</form>
+{% endblock %}

@@ -33,7 +33,7 @@ def listClients(pagination):
 	return AuthenticatedUserTemplate(
 		Path(clients_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
 		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_sidebar("clients").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("clients").render()
 
 
 @clients_blueprint.route('/client')
@@ -51,7 +51,7 @@ def newClient():
 				language=g.language['code'])
 		).joinpath("new.html"),
 		unused_slugs=unused
-	).handles_success_and_error().with_dictionnary().with_sidebar("clients").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("clients").render()
 
 
 @clients_blueprint.route('/client',methods=["POST"])
@@ -103,7 +103,7 @@ def viewClient(client_id):
 		client_stats=client_stats,
 		devices=devices,
 		destinations=ClientDestination.storage.list(client_id=client_id)
-	).handles_success_and_error().with_dictionnary().with_sidebar("clients").render()
+	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("clients").render()
 
 
 

@@ -1,0 +1,382 @@
+<script>
+// ---------- Helpers ----------
+function showAlert(message, variant='success') {
+  const container = document.getElementById('alertContainer');
+  container.innerHTML = `
+    <div class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>`;
+}
+(function initCommonHeaders(){
+  const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+  const metaVal = metaCsrf ? metaCsrf.getAttribute('content') : "";
+  const jinjaVal = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  const csrfToken = metaVal || jinjaVal || "";
+  window._commonHeaders = { 'Content-Type': 'application/json' };
+  if (csrfToken) window._commonHeaders['X-CSRFToken'] = csrfToken;
+})();
+
+// ---------- USER: Email confirm logic ----------
+(() => {
+  const initialEmail = "{{ user.email }}";
+  const emailEl = document.getElementById('email');
+  const group = document.getElementById('confirmEmailGroup');
+  const emailConfirmEl = document.getElementById('email_confirm');
+
+  function needConfirm() {
+    return emailEl.value.trim() !== initialEmail.trim();
+  }
+  function updateConfirmVisibility() {
+    const show = needConfirm();
+    group.classList.toggle('d-none', !show);
+    emailConfirmEl.required = show;
+    if (!show) {
+      emailConfirmEl.value = '';
+      emailConfirmEl.setCustomValidity('');
+      emailConfirmEl.classList.remove('is-invalid');
+    }
+  }
+  function validateMatch() {
+    if (!needConfirm()) return;
+    const match = emailConfirmEl.value.trim() === emailEl.value.trim();
+    emailConfirmEl.setCustomValidity(match ? '' : 'Emails do not match');
+    emailConfirmEl.classList.toggle('is-invalid', !match);
+  }
+
+  emailEl.addEventListener('input', () => { updateConfirmVisibility(); validateMatch(); });
+  emailConfirmEl.addEventListener('input', validateMatch);
+  updateConfirmVisibility();
+})();
+
+// ---------- USER: Save profile ----------
+document.getElementById('userProfileForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('saveProfileBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  // enforce confirm match if visible
+  const confirmGroup = document.getElementById('confirmEmailGroup');
+  const emailEl = document.getElementById('email');
+  const emailConfirmEl = document.getElementById('email_confirm');
+  if (!confirmGroup.classList.contains('d-none')) {
+    if (emailEl.value.trim() !== emailConfirmEl.value.trim()) {
+      emailConfirmEl.setCustomValidity('Emails do not match');
+      emailConfirmEl.classList.add('is-invalid');
+    } else {
+      emailConfirmEl.setCustomValidity('');
+      emailConfirmEl.classList.remove('is-invalid');
+    }
+  }
+
+  if (!form.checkValidity()) {
+    form.classList.add('was-validated');
+    return;
+  }
+
+  btn.disabled = true; spinner.classList.remove('d-none');
+
+  const payload = {
+    email: emailEl.value.trim(),
+    language: document.getElementById('language').value,
+    track: !!document.getElementById('track').checked
+  };
+
+  try {
+    const res = await fetch("{{ url_for('users.editUser', user_id=user['id']) }}", {
+      method: 'PUT',
+      headers: window._commonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    // After success, treat new email as baseline so confirm hides again
+    (function resetConfirmBaseline(){
+      const emailNow = payload.email;
+      const group = document.getElementById('confirmEmailGroup');
+      const emailConfirmEl = document.getElementById('email_confirm');
+      group.classList.add('d-none');
+      emailConfirmEl.required = false;
+      emailConfirmEl.value = '';
+      emailConfirmEl.setCustomValidity('');
+      emailConfirmEl.classList.remove('is-invalid');
+    })();
+
+    showAlert('Profile updated successfully.');
+  } catch (err) {
+    showAlert('Failed to update profile: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- USER: Change password ----------
+document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('savePasswordBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  const current = document.getElementById('current_password').value;
+  const next = document.getElementById('new_password').value;
+  const confirm = document.getElementById('confirm_password').value;
+
+  let valid = true;
+  if (next.length < 8) valid = false;
+  if (next !== confirm) valid = false;
+  if (!current) valid = false;
+
+  if (!valid || !form.checkValidity()) {
+    form.classList.add('was-validated');
+    return;
+  }
+
+  btn.disabled = true; spinner.classList.remove('d-none');
+  try {
+    const res = await fetch("{{ url_for('users.changePassword', user_id=user['id']) }}", {
+      method: 'PUT',
+      headers: window._commonHeaders,
+      body: JSON.stringify({ current_password: current, new_password: next })
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    form.reset();
+    form.classList.remove('was-validated');
+    showAlert('Password updated successfully.');
+  } catch (err) {
+    showAlert('Failed to update password: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- SYSTEM: Search filter ----------
+document.getElementById('metricSearch').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#metricsTable tbody tr').forEach(tr => {
+    const key = tr.querySelector('.m-key')?.innerText.toLowerCase() || '';
+    const unit = tr.querySelector('.m-unit')?.innerText.toLowerCase() || '';
+    const ref  = tr.querySelector('.m-ref')?.innerText.toLowerCase() || '';
+    const desc = tr.querySelector('.m-desc')?.innerText.toLowerCase() || '';
+    tr.style.display = (key.includes(q) || unit.includes(q) || desc.includes(q) || ref.includes(q)) ? '' : 'none';
+  });
+});
+
+// ---------- SYSTEM: Secrets & Encryption ----------
+async function loadCryptoConfig() {
+  const status = document.getElementById('crypto_status');
+  try {
+    const res = await fetch("{{ url_for('general.getCrypto', json=True) }}", { headers: window._commonHeaders });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    const cfg = data.config || data || {};
+    document.getElementById('crypto_algorithm').value = (cfg.algorithm || 'aes-256-gcm').toLowerCase();
+    document.getElementById('crypto_key_source').value = (cfg.key_source || 'env').toLowerCase();
+    document.getElementById('crypto_key_id').value = cfg.key_id || 'PRIMARY';
+    document.getElementById('crypto_iv_bytes').value = cfg.iv_bytes ?? 12;
+    document.getElementById('crypto_tag_bytes').value = cfg.tag_bytes ?? 16;
+    document.getElementById('crypto_encoding').value = (cfg.encoding || 'base64').toLowerCase();
+
+    status.textContent = `Active: ${cfg.algorithm || 'AES-256-GCM'} • Key: ${cfg.key_id || 'PRIMARY'}${cfg.version ? ' • v'+cfg.version : ''}`;
+  } catch (err) {
+    status.textContent = 'Failed to load config';
+    showAlert('Failed to load encryption config: ' + err.message, 'danger');
+  }
+}
+loadCryptoConfig();
+
+document.getElementById('cryptoSaveBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('cryptoSaveBtn');
+  const spin = btn.querySelector('.spinner-border');
+  btn.disabled = true; spin.classList.remove('d-none');
+
+  const payload = {
+    algorithm: document.getElementById('crypto_algorithm').value,
+    key_source: document.getElementById('crypto_key_source').value,
+    key_id: document.getElementById('crypto_key_id').value.trim() || 'PRIMARY',
+    iv_bytes: parseInt(document.getElementById('crypto_iv_bytes').value, 10),
+    tag_bytes: parseInt(document.getElementById('crypto_tag_bytes').value, 10),
+    encoding: document.getElementById('crypto_encoding').value
+  };
+
+  try {
+    const res = await fetch("{{ url_for('general.updateCrypto') }}", {
+      method: 'PUT',
+      headers: window._commonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    showAlert('Encryption configuration saved.');
+    loadCryptoConfig();
+  } catch (err) {
+    showAlert('Failed to save encryption config: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spin.classList.add('d-none');
+  }
+});
+
+document.getElementById('cryptoTestBtn').addEventListener('click', async () => {
+  const plain = document.getElementById('crypto_test_plain').value;
+  const outC = document.getElementById('crypto_test_cipher');
+  const outP = document.getElementById('crypto_test_decrypted');
+  outC.value = '…'; outP.textContent = '…';
+  try {
+    const res = await fetch("{{ url_for('general.testCrypto') }}", {
+      method: 'POST',
+      headers: window._commonHeaders,
+      body: JSON.stringify({ plaintext: plain })
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    outC.value = data.ciphertext || '';
+    outP.textContent = (data.decrypted !== undefined) ? String(data.decrypted) : '—';
+    showAlert('Test completed.');
+  } catch (err) {
+    outC.value = ''; outP.textContent = '—';
+    showAlert('Test failed: ' + err.message, 'danger');
+  }
+});
+
+document.getElementById('cryptoRotateBtn').addEventListener('click', async () => {
+  if (!confirm('Rotate the encryption key? You may need to re-encrypt existing secrets.')) return;
+  try {
+    const res = await fetch("{{ url_for('general.rotateCryptoKey') }}", {
+      method: 'POST',
+      headers: window._commonHeaders,
+      body: JSON.stringify({ key_id: document.getElementById('crypto_key_id').value.trim() || 'PRIMARY' })
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    showAlert('Key rotation initiated.');
+    loadCryptoConfig();
+  } catch (err) {
+    showAlert('Key rotation failed: ' + err.message, 'danger');
+  }
+});
+
+document.getElementById('cryptoReencryptBtn').addEventListener('click', async () => {
+  if (!confirm('Re-encrypt all stored passwords with the active key/algorithm? This may take time.')) return;
+  try {
+    const res = await fetch("{{ url_for('general.reCrypto') }}", {
+      method: 'POST',
+      headers: window._commonHeaders
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    const count = data.updated_count ?? data.count ?? 'All';
+    showAlert(`Re-encryption completed. Updated ${count} secrets.`);
+  } catch (err) {
+    showAlert('Re-encryption failed: ' + err.message, 'danger');
+  }
+});
+
+// ---------- SYSTEM: Add metric ----------
+document.getElementById('addMetricForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('saveMetricBtn');
+  const spinner = btn.querySelector('.spinner-border');
+
+  const key = document.getElementById('key_name');
+
+  const refVal = ref.value.trim();
+  if (refVal && !/^[A-Za-z0-9]{3}$/.test(refVal)) {
+    ref.classList.add('is-invalid');
+    return;
+  } else {
+    ref.classList.remove('is-invalid');
+  }
+
+  if (!form.checkValidity()) {
+    form.classList.add('was-validated');
+    return;
+  }
+
+  btn.disabled = true; spinner.classList.remove('d-none');
+
+  const payload = {
+    key_name: key.value.trim(),
+    default_unit: document.getElementById('default_unit').value.trim() || null,
+    description: document.getElementById('description_metric').value || null
+  };
+
+  try {
+    const res = await fetch("{{ url_for('metrics.createMetric') }}", {
+      method: 'POST',
+      headers: window._commonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+    const metric = data.metric || payload;
+    if (!metric.id) metric.id = "~";
+
+    const rowHTML = `
+      <tr id="metric-row-${metric.id}">
+        <td>#${metric.id}</td>
+        <td class="m-key"><code>${metric.key_name}</code></td>
+        <td class="m-unit">${metric.default_unit || '-'}</td>
+        <td class="m-desc text-muted">${metric.description || '—'}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-danger delete-metric-btn"
+                  data-metric-id="${metric.id}"
+                  data-delete-url="{{ url_for('metrics.deleteMetric', metric_id=0) }}".replace('metric_id=0','metric_id=${metric.id}')>
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>`;
+    const tbody = document.querySelector('#metricsTable tbody');
+    if (tbody.querySelector('.text-center')) tbody.innerHTML = '';
+    tbody.insertAdjacentHTML('afterbegin', rowHTML);
+
+    bindMetricDeleteHandlers(tbody);
+
+    (bootstrap.Modal.getInstance(document.getElementById('addMetricModal')) || new bootstrap.Modal(document.getElementById('addMetricModal'))).hide();
+    form.reset(); form.classList.remove('was-validated');
+    showAlert('Metric added successfully.');
+  } catch (err) {
+    showAlert('Failed to add metric: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false; spinner.classList.add('d-none');
+  }
+});
+
+// ---------- SYSTEM: Delete metric ----------
+function bindMetricDeleteHandlers(root=document) {
+  root.querySelectorAll('.delete-metric-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-metric-id');
+      const url = btn.getAttribute('data-delete-url');
+      if (!confirm(`Delete metric #${id}? This cannot be undone.`)) return;
+
+      btn.disabled = true;
+      try {
+        const res = await fetch(url, { method: 'DELETE', headers: window._commonHeaders });
+        const data = await res.json().catch(()=> ({}));
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+        const row = document.getElementById(`metric-row-${id}`);
+        row?.parentNode?.removeChild(row);
+
+        const tbody = document.querySelector('#metricsTable tbody');
+        if (!tbody.querySelector('tr')) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No metrics yet.</td></tr>`;
+        }
+        showAlert(`Metric #${id} deleted.`);
+      } catch (err) {
+        showAlert('Failed to delete metric: ' + err.message, 'danger');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
+}
+bindMetricDeleteHandlers(document);
+</script>

@@ -1,21 +1,21 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}Parsers - TechDash{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Parseurs - MqttRelay{% endblock %}
 {% block content %}
 
-<h1 class="mb-4" style="margin-top: 50px;">Parsers</h1>
+<h1 class="mb-4" style="margin-top: 50px;">Parseurs</h1>
 
 <a href="{{ url_for('parsers.newParser') }}" class="btn btn-secondary">
-    <i class="bi bi-plus"></i> New Parser
+    <i class="bi bi-plus"></i> Nouveau parseur
 </a>
 
 <table class="table table-hover table-striped align-middle" style="margin-top: 1rem;">
     <thead class="table-dark">
         <tr>
             <th>ID</th>
-            <th>Name</th>
+            <th>Nom</th>
             <th>Version</th>
-            <th>Language</th>
-            <th>Active</th>
+            <th>Langue</th>
+            <th>Actif</th>
             <th>Description</th>
             <th>Actions</th>
         </tr>
@@ -29,21 +29,21 @@
             <td>{{ parser['language'] or '-' }}</td>
             <td>
                 {% if parser.active %}
-                    <span class="badge bg-success">Active</span>
+                    <span class="badge bg-success">Actif</span>
                 {% else %}
-                    <span class="badge bg-secondary">Inactive</span>
+                    <span class="badge bg-secondary">Inactif</span>
                 {% endif %}
             </td>
             <td class="text-muted">{{ (parser['description'] or '-')|truncate(90, True) }}</td>
             <td>
                 <a href="{{ url_for('parsers.viewParser', parser_id=parser.id) }}" class="btn btn-sm btn-primary">
-                    <i class="bi bi-eye"></i> View
+                    <i class="bi bi-eye"></i> Voir
                 </a>
             </td>
         </tr>
         {% else %}
         <tr>
-            <td colspan="7" class="text-center text-muted">No parsers found.</td>
+            <td colspan="7" class="text-center text-muted">Aucun parseur trouvé.</td>
         </tr>
         {% endfor %}
     </tbody>

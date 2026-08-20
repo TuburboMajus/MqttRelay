@@ -29,7 +29,7 @@ dashboard_blueprint = MultiLanguageBlueprint('dashboard',__name__, load_in_g=Tru
 def dashboard():
 	return AuthenticatedUserTemplate(
 	Path(dashboard_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("dashboard.html")
-).handles_success_and_error().with_dictionnary().with_sidebar("dashboard").render()
+).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("dashboard").render()
 
 
 

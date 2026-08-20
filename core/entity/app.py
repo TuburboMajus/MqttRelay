@@ -21,7 +21,7 @@ class MqttRelay(Entity):
 	ATTRIBUTES = [
 		{"name":"version","type":StringAttribute, "max_length":20, "required":True,"is_id":True,"non_empty":True,"is_nullable":False},
 	]
-# ** EndSection ** Entity_DigiUpAgri
+# ** EndSection ** Entity_MqttRelay
 
 
 # ** Section ** Entity_Language

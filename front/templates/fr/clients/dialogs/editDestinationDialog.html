@@ -1,0 +1,116 @@
+htmlCopy code<!-- View / Edit Destination Modal -->
+<div class="modal fade" id="destinationDetailsModal" tabindex="-1" aria-labelledby="destinationDetailsLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="destinationDetailsLabel">Destination #<span id="vd_id"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <ul class="nav nav-tabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="vd-tab-details" data-bs-toggle="tab" data-bs-target="#vd-pane-details" type="button" role="tab">Details</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="vd-tab-edit" data-bs-toggle="tab" data-bs-target="#vd-pane-edit" type="button" role="tab">Edit</button>
+          </li>
+        </ul>
+
+        <div class="tab-content pt-3">
+          <!-- Details -->
+          <div class="tab-pane fade show active" id="vd-pane-details" role="tabpanel" aria-labelledby="vd-tab-details">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div><strong>Type:</strong> <span id="vd_type"></span></div>
+                <div><strong>Target:</strong> <span id="vd_target"></span></div>
+                <div><strong>Active:</strong> <span id="vd_active"></span></div>
+                <div><strong>Created:</strong> <span id="vd_created_at"></span></div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="vd_options">Options</label>
+                <pre class="bg-light p-3 rounded small mb-0" id="vd_options" style="max-height: 240px; overflow:auto;">—</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Edit -->
+          <div class="tab-pane fade" id="vd-pane-edit" role="tabpanel" aria-labelledby="vd-tab-edit">
+            <form id="editDestinationForm" class="needs-validation" novalidate>
+              <input type="hidden" id="vdf_id" name="id">
+
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label" for="vdf_type">Type</label>
+                  <select id="vdf_type" name="type" class="form-select" required aria-describedby="vdf_type_help">
+                    <option value="mysql">MySQL</option>
+                    <option value="postgres">Postgres</option>
+                    <option value="http">HTTP</option>
+                    <option value="kafka">Kafka</option>
+                    <option value="file">File</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <div id="vdf_type_help" class="form-text">Switching type will change the required fields below.</div>
+                </div>
+
+                <div class="col-md-6 d-flex align-items-end">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="vdf_active" name="active">
+                    <label class="form-check-label" for="vdf_active">Active</label>
+                  </div>
+                </div>
+
+                <!-- DB cluster -->
+                <div class="col-md-8 db-only-edit d-none">
+                  <label class="form-label" for="vdf_host">Host</label>
+                  <input id="vdf_host" name="host" class="form-control" placeholder="db.example.com"
+                         spellcheck="false" autocapitalize="off" autocomplete="off">
+                </div>
+                <div class="col-md-4 db-only-edit d-none">
+                  <label class="form-label" for="vdf_port">Port</label>
+                  <input id="vdf_port" name="port" type="number" min="1" step="1" inputmode="numeric" class="form-control" placeholder="5432">
+                </div>
+                <div class="col-md-6 db-only-edit d-none">
+                  <label class="form-label" for="vdf_database_name">Database</label>
+                  <input id="vdf_database_name" name="database_name" class="form-control" placeholder="mydb"
+                         spellcheck="false" autocapitalize="off" autocomplete="off">
+                </div>
+                <div class="col-md-6 db-only-edit d-none">
+                  <label class="form-label" for="vdf_username">Username</label>
+                  <input id="vdf_username" name="username" class="form-control" placeholder="dbuser"
+                         spellcheck="false" autocapitalize="off" autocomplete="username">
+                </div>
+                <div class="col-md-6 db-only-edit d-none">
+                  <label class="form-label" for="vdf_password">Password</label>
+                  <input id="vdf_password" name="password" type="password" class="form-control" placeholder="(leave blank to keep)" autocomplete="new-password">
+                  <div class="form-text">Leave empty to keep the existing password.</div>
+                </div>
+
+                <!-- URI -->
+                <div class="col-12 uri-only-edit d-none">
+                  <label class="form-label" for="vdf_uri">URI / Endpoint</label>
+                  <input id="vdf_uri" name="uri" class="form-control" placeholder="https://api.example.com/ingest"
+                         inputmode="url" spellcheck="false" autocapitalize="off" autocomplete="off">
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label" for="vdf_options_json">Options (JSON)</label>
+                  <textarea id="vdf_options_json" name="options_json" class="form-control font-monospace" rows="6"
+                            placeholder='{"headers":{"Authorization":"Bearer ..."}}' spellcheck="false"></textarea>
+                  <div class="form-text">Optional advanced settings; must be valid JSON.</div>
+                </div>
+              </div>
+
+              <div class="mt-3 d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary" id="vdf_saveBtn">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div> <!-- /tab-content -->
+      </div>
+    </div>
+  </div>
+</div>

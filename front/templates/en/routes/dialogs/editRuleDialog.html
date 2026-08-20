@@ -1,0 +1,117 @@
+<!-- ================= Edit Rule Modal ================= -->
+<div class="modal fade" id="editRouteModal" tabindex="-1" aria-labelledby="editRouteLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <form class="modal-content" id="editRouteForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editRouteLabel">Edit Routing Rule</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="row g-3">
+          <!-- CLIENT (required) -->
+          <div class="col-md-6">
+            <label for="e_client_select" class="form-label">Client</label>
+            <select id="e_client_select" class="form-select" required>
+              {% if rule.client_id and (rule.client_name or '') %}
+                <option value="{{ rule.client_id }}" selected>{{ rule.client_name }}</option>
+              {% endif %}
+            </select>
+            <input type="hidden" id="e_client_id" name="client_id" value="{{ rule.client_id }}" required>
+            <div class="form-text">Changing client will reset Topic/Device/Destinations.</div>
+            <div class="invalid-feedback">Please choose a client.</div>
+          </div>
+
+          <!-- PRIORITY -->
+          <div class="col-md-3">
+            <label for="e_priority" class="form-label">Priority</label>
+            <input type="number" class="form-control" id="e_priority" name="priority"
+                   min="0" max="100000" step="1"
+                   value="{{ rule.priority or 100 }}" required>
+            <div class="form-text">Lower value = higher priority.</div>
+            <div class="invalid-feedback">Provide a valid priority.</div>
+          </div>
+
+          <!-- ACTIVE -->
+          <div class="col-md-3 d-flex align-items-end">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="e_active" name="active"
+                     {{ rule.active and 'checked' or '' }}>
+              <label class="form-check-label" for="e_active">Active</label>
+            </div>
+          </div>
+
+          <hr class="mt-2 mb-1"/>
+
+          <!-- TOPIC (optional, filtered by client) -->
+          <div class="col-md-6">
+            <label for="e_topic_select" class="form-label">Topic (optional)</label>
+            <select id="e_topic_select" class="form-select">
+              <option value="">Any topic</option>
+            </select>
+            <input type="hidden" id="e_topic_id" name="topic_id" value="{{ rule.topic_id or '' }}">
+          </div>
+
+          <!-- DEVICE (optional, filtered by client) -->
+          <div class="col-md-6">
+            <label for="e_device_select" class="form-label">Device (optional)</label>
+            <select id="e_device_select" class="form-select">
+              <option value="">Any device</option>
+            </select>
+            <input type="hidden" id="e_device_id" name="device_id" value="{{ rule.device_id or '' }}">
+          </div>
+
+          <!-- PARSER -->
+          <div class="col-md-6">
+            <label for="e_parser_select" class="form-label">Parser</label>
+            <select id="e_parser_select" class="form-select" required>
+              {% if rule.parser_id and (rule.parser_name or '') %}
+                <option value="{{ rule.parser_id }}" selected>{{ rule.parser_name }}</option>
+              {% endif %}
+            </select>
+            <input type="hidden" id="e_parser_id" name="parser_id" value="{{ rule.parser_id or '' }}">
+            <div class="invalid-feedback">Please choose a parser.</div>
+          </div>
+
+          <!-- PARSER CONFIG (plain JSON) -->
+          <div class="col-md-6">
+            <label for="e_parser_config" class="form-label">Parser Config (JSON)</label>
+            <textarea id="e_parser_config" name="parser_config" class="form-control font-monospace" rows="6"
+                      placeholder='{"threshold":25,"units":"C"}'>{{ rule.parser_config|tojson if rule.parser_config else '' }}</textarea>
+            <div class="invalid-feedback" id="e_parserConfigFeedback">Invalid JSON.</div>
+          </div>
+
+          <!-- CONDITIONS (mongo_dsl JSON) -->
+          <div class="col-12">
+            <label for="e_conditions" class="form-label">Conditions (mongo_dsl JSON, optional)</label>
+            <textarea id="e_conditions" name="conditions" class="form-control font-monospace" rows="6"
+                      placeholder='{"payload.temp":{"$gt":25}}'>{{ rule.conditions|tojson if rule.conditions else '' }}</textarea>
+            <div class="invalid-feedback" id="e_conditionsFeedback">Invalid JSON.</div>
+          </div>
+
+          <hr class="mt-2 mb-1"/>
+
+          <!-- DESTINATIONS (multi-select) -->
+          <div class="col-12">
+            <label for="e_destinations_select" class="form-label">Destinations</label>
+            <select id="e_destinations_select" class="form-select" multiple></select>
+            <div class="form-text">Pick one or more destinations for this client.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="saveEditRouteBtn" type="submit" class="btn btn-primary">
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          Save changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

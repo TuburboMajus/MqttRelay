@@ -1,8 +1,8 @@
-{% extends "/common/layouts/base.html" %}
-{% block title %}New Topic - MqttRelay{% endblock %}
+htmlCopy code{% extends "/common/layouts/base.html" %}
+{% block title %}Nouveau Sujet - MqttRelay{% endblock %}
 {% block content %}
 
-<h1 class="mb-4" style="margin-top:50px;">Add New MQTT Topic</h1>
+<h1 class="mb-4" style="margin-top:50px;">Ajouter un nouveau sujet MQTT</h1>
 
 {% with msgs = get_flashed_messages(with_categories=true) %}
   {% if msgs %}
@@ -18,66 +18,66 @@
 <form method="POST" action="{{ url_for('topics.newTopic') }}" class="needs-validation" novalidate>
   {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
 
-  <!-- Hidden fields posted to backend (match mqtt_topic columns) -->
+  <!-- Champs cachés envoyés au backend (correspondent aux colonnes mqtt_topic) -->
   <input type="hidden" id="client_id" name="client_id" value="{{ request.form.get('client_id','') }}" required>
   <input type="hidden" id="device_id" name="device_id" value="{{ request.form.get('device_id','') }}">
   <input type="hidden" id="topic"     name="topic"     value="{{ request.form.get('topic','') }}" required>
 
   <div class="row g-3">
-    <!-- 1) CLIENT: real <select> with search -->
+    <!-- 1) CLIENT : véritable <select> avec recherche -->
     <div class="col-md-6">
       <label for="client_select" class="form-label">Client</label>
       <select id="client_select" class="form-select" aria-describedby="clientHelp" required>
         {% if request.form.get('client_id') and request.form.get('client_name') %}
           <option value="{{ request.form.get('client_id') }}" selected>{{ request.form.get('client_name') }}</option>
         {% else %}
-          <option value="" selected disabled>Type to search clients…</option>
+          <option value="" selected disabled>Tapez pour rechercher des clients…</option>
         {% endif %}
       </select>
-      <div class="form-text" id="clientHelp">Search and select a client. This will load its unlinked topics.</div>
-      <div class="invalid-feedback">Please choose a client.</div>
+      <div class="form-text" id="clientHelp">Recherchez et sélectionnez un client. Cela chargera ses sujets non liés.</div>
+      <div class="invalid-feedback">Veuillez choisir un client.</div>
     </div>
 
-    <!-- 2) UNLINKED TOPICS: real <select> with search -->
+    <!-- 2) SUJETS NON LIÉS : véritable <select> avec recherche -->
     <div class="col-md-6">
-      <label for="topic_select" class="form-label">Unlinked Topic</label>
+      <label for="topic_select" class="form-label">Sujet non lié</label>
       <select id="topic_select" class="form-select" aria-describedby="topicSelectHelp" disabled required>
-        <option value="" selected disabled>Choose a client first…</option>
+        <option value="" selected disabled>Choisissez d’abord un client…</option>
       </select>
-      <div class="form-text" id="topicSelectHelp">Only topics not yet linked for this client are shown.</div>
-      <div class="invalid-feedback">Please choose a topic.</div>
+      <div class="form-text" id="topicSelectHelp">Seuls les sujets encore non liés pour ce client sont affichés.</div>
+      <div class="invalid-feedback">Veuillez choisir un sujet.</div>
     </div>
 
-    <!-- Read-only mirrors (not submitted) -->
+    <!-- Miroirs en lecture seule (non soumis) -->
     <div class="col-12">
-      <label for="topic_display" class="form-label">Chosen Topic</label>
+      <label for="topic_display" class="form-label">Sujet choisi</label>
       <input type="text" class="form-control" id="topic_display"
              value="{{ request.form.get('topic','') }}"
              placeholder="Will be filled after selecting a topic" readonly />
     </div>
 
     <div class="col-md-6">
-      <label for="device_display" class="form-label">Device (auto)</label>
+      <label for="device_display" class="form-label">Appareil (auto)</label>
       <input type="text" class="form-control" id="device_display"
              value="" placeholder="Auto-filled from the selected topic (may be empty)"
              readonly />
     </div>
 
-    <!-- Optional fields -->
+    <!-- Champs facultatifs -->
     <div class="col-md-6">
-      <label for="description" class="form-label">Description (optional)</label>
+      <label for="description" class="form-label">Description (facultatif)</label>
       <input type="text" class="form-control" id="description" name="description"
              placeholder="Short description"
              value="{{ request.form.get('description','') }}" maxlength="512" />
     </div>
 
     <div class="col-md-4">
-      <label for="qos_default" class="form-label">Default QoS</label>
+      <label for="qos_default" class="form-label">QoS par défaut</label>
       {% set qos_val = request.form.get('qos_default','0') %}
       <select class="form-select" id="qos_default" name="qos_default">
-        <option value="0" {{ 'selected' if qos_val=='0' else '' }}>0 – At most once</option>
-        <option value="1" {{ 'selected' if qos_val=='1' else '' }}>1 – At least once</option>
-        <option value="2" {{ 'selected' if qos_val=='2' else '' }}>2 – Exactly once</option>
+        <option value="0" {{ 'selected' if qos_val=='0' else '' }}>0 – Au plus une fois</option>
+        <option value="1" {{ 'selected' if qos_val=='1' else '' }}>1 – Au moins une fois</option>
+        <option value="2" {{ 'selected' if qos_val=='2' else '' }}>2 – Exactement une fois</option>
       </select>
     </div>
 
@@ -86,21 +86,21 @@
         {% set active_val = request.form.get('active','1') %}
         <input class="form-check-input" type="checkbox" value="1" id="active" name="active"
                {{ 'checked' if active_val in ['1','true','on'] else '' }}>
-        <label class="form-check-label" for="active">Active</label>
+        <label class="form-check-label" for="active">Actif</label>
       </div>
     </div>
   </div>
 
   <div class="mt-4 d-flex gap-2">
-    <button type="submit" class="btn btn-primary">Add Topic</button>
-    <a href="{{ url_for('topics.listTopics') }}" class="btn btn-outline-secondary">Cancel</a>
+    <button type="submit" class="btn btn-primary">Ajouter le sujet</button>
+    <a href="{{ url_for('topics.listTopics') }}" class="btn btn-outline-secondary">Annuler</a>
   </div>
 </form>
 
 {% endblock %}
 
 {% block scripts %}
-<!-- Tom Select (enhanced searchable selects) -->
+<!-- Tom Select (sélecteurs améliorés avec recherche) -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 
@@ -121,17 +121,17 @@
   const clientSelectEl = document.getElementById('client_select');
   const topicSelectEl  = document.getElementById('topic_select');
 
-  // Store payload for topics in a map (topic -> payload) to avoid dataset sync issues
+  // Stocker la charge utile des sujets dans une map (topic -> payload) pour éviter les problèmes de synchro
   const topicPayload = new Map();
 
-  // CLIENT select with remote search
+  // Sélecteur CLIENT avec recherche distante
   const clientSelectTS = new TomSelect('#client_select', {
     valueField: 'id',
     labelField: 'name',
     searchField: ['name'],
     create: false,
     allowEmptyOption: true,
-    placeholder: 'Type to search clients…',
+    placeholder: 'Tapez pour rechercher des clients…',
     loadThrottle: 300,
     load: async (query, callback) => {
       if (!query || !query.trim()) return callback();
@@ -149,7 +149,7 @@
     onChange: async (clientId) => {
       clientIdEl.value = clientId || '';
 
-      // Reset topic/device fields
+      // Réinitialiser les champs sujet/appareil
       topicHiddenEl.value = '';
       topicDisplay.value  = '';
       deviceIdEl.value    = '';
@@ -159,15 +159,15 @@
     }
   });
 
-  // TOPIC select (options loaded after client pick)
+  // Sélecteur SUJET (options chargées après choix du client)
   const topicSelectTS = new TomSelect('#topic_select', {
     create: false,
     searchField: ['text'],
     allowEmptyOption: false,
-    placeholder: 'Choose a topic…',
+    placeholder: 'Choisissez un sujet…',
     onChange: (value) => {
       const payload = topicPayload.get(value) || null;
-      // Fill hidden + display
+      // Renseigner le champ caché + l’affichage
       topicHiddenEl.value = value || '';
       topicDisplay.value  = value || '';
 
@@ -181,7 +181,7 @@
     }
   });
 
-  // Load unlinked topics for a client into the topic <select>
+  // Charger les sujets non liés d’un client dans le <select> des sujets
   async function loadUnlinkedTopicsForClient(clientId){
     topicSelectEl.disabled = true;
     topicSelectTS.clear(true);
@@ -201,14 +201,14 @@
           const devId    = t.device?.id ?? t.device_id ?? '';
           const devLabel = ([t.device?.name,t.device_type?.vendor, t.device_type?.model, t.device_type?.serial].filter(Boolean).join(' ')) || (devId ? ('#'+devId) : '');
           const topicStr = t.device?.topic || '';
-          const text     = devId ? `${topicStr} — device: ${devLabel}` : topicStr;
+          const text     = devId ? `${topicStr} — appareil : ${devLabel}` : topicStr;
           const payload  = { topic: topicStr, device: devId ? { id: devId, label: devLabel } : null };
           return { value: topicStr, text, payload };
         })
         .filter(it => it.value);
 
       if (!items.length){
-        topicSelectTS.addOption({ value: '', text: 'No unlinked topics for this client' });
+        topicSelectTS.addOption({ value: '', text: 'Aucun sujet non lié pour ce client' });
         topicSelectTS.disable();
         return;
       }
@@ -221,19 +221,19 @@
       topicSelectTS.enable();
       topicSelectEl.disabled = false;
 
-      // Restore selection if server re-rendered with a topic
+      // Restaurer la sélection si le serveur a renvoyé un sujet
       const existingTopic = "{{ request.form.get('topic','') }}".trim();
       if (existingTopic && topicPayload.has(existingTopic)) {
         topicSelectTS.setValue(existingTopic, true);
       }
     } catch {
       topicSelectTS.clearOptions();
-      topicSelectTS.addOption({ value:'', text:'Failed to load topics' });
+      topicSelectTS.addOption({ value:'', text:'Échec du chargement des sujets' });
       topicSelectTS.disable();
     }
   }
 
-  // Bootstrap validation
+  // Validation Bootstrap
   (function(){
     const forms = document.querySelectorAll('.needs-validation');
     Array.prototype.slice.call(forms).forEach(function(form){
@@ -245,7 +245,7 @@
     });
   })();
 
-  // On load: restore client/topic if provided by server
+  // Au chargement : restaurer client/sujet si fournis par le serveur
   window.addEventListener('DOMContentLoaded', async () => {
     const existingClientId   = "{{ request.form.get('client_id','') }}".trim();
     const existingClientName = "{{ request.form.get('client_name','') }}".trim();
