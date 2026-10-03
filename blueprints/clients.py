@@ -413,14 +413,14 @@ def editDestination(client_id, destination_id):
                 if field == 'port':
                     updates[field] = int(data[field]) if data[field] else None
                 elif field == 'active':
-                    updates[field] = data[field].lower() in ['true', '1', 'on']
+                    updates[field] = data[field].lower() in ['true', '1', 'on'] if isinstance(data[field], str) else bool(data[field])
                 else:
                     updates[field] = data[field]
         
         # Handle password encryption if provided
-        if data.get('password') and data['password'].strip():
+        if data.get('password') and str(data['password']).strip():
             key = get_key_bytes(cc.key_source, cc.key_id)
-            updates['password_enc'] = crypto_config_encrypt(cc, data['password'], key).encode('ascii')
+            updates['password_enc'] = crypto_config_encrypt(cc, str(data['password']), key).encode('ascii')
         
         repos['ClientDestination'].update(destination, **updates)
         current_app.logger.info("Route [clients.editDestination] destination updated (id=%s)", destination_id)
