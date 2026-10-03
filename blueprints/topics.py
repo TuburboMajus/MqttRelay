@@ -1,112 +1,139 @@
-from flask import current_app, render_template, request, redirect, url_for, abort, session,g
-from flask_login import LoginManager, login_required, current_user
+from flask import current_app, render_template, request, redirect, url_for, abort, session, g, jsonify, Blueprint
+from flask_login import login_required, current_user
 
-from temod_flask.utils.content_readers import body_content
-from temod_flask.blueprint import MultiLanguageBlueprint
-from temod_flask.blueprint.utils import Paginator
-
-from front.renderers.users import AuthenticatedUserTemplate
-
-from temod.base.attribute import *
-from temod.base.condition import *
+from core.repository import repos
+from core.pagination import paginate
+from core.models import MqttTopic, Device, MqttMessage
 
 from datetime import datetime, date
-from pathlib import Path
-
-import traceback
-import json
+import logging
 
 
-topics_blueprint = MultiLanguageBlueprint('topics',__name__, load_in_g=True, default_config={
-	"templates_folder":"{language}/topics",
-	"topics_per_page":100,
-}, dictionnary_selector=lambda lg:lg['code'])
+bp = Blueprint('topics', __name__)
+
+def setup(config=None):
+    """Setup topics blueprint with configuration."""
+    return bp
 
 
-@topics_blueprint.route('/topics')
+@bp.route('/topics')
 @login_required
-@Paginator(topics_blueprint, page_size_config="topics_per_page").for_entity(MqttTopicFile).with_default_filter(True).paginate
-@topics_blueprint.with_dictionnary
-def listTopics(pagination):
-	if request.args.get('json','false').lower() in ["1","true"]:
-		return pagination.to_dict()['current']
-	return AuthenticatedUserTemplate(
-		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
-		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
-
-
-@topics_blueprint.route('/unlinked_topics')
-@login_required
-@Paginator(topics_blueprint, page_size_config="topics_per_page").for_entity(DeviceTopic).with_filter(
-	lambda x:And(Equals(StringAttribute("client_id",value=x.get('client_id',0),owner_name=Device.ENTITY_NAME)),Equals(StringAttribute("topic",owner_name=MqttTopic.ENTITY_NAME)))
-).with_default_filter(True).paginate
-@topics_blueprint.with_dictionnary
-def listUnlnkedTopics(pagination):
-	if request.args.get('json','false').lower() in ["1","true"]:
-		return pagination.to_dict()['current']
-	return AuthenticatedUserTemplate(
-		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
-		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
-
-
-@topics_blueprint.route('/topic')
-@login_required
-@topics_blueprint.with_dictionnary
-def newTopic():
-	return AuthenticatedUserTemplate(
-		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
-
-
-@topics_blueprint.route('/topic',methods=["POST"])
-@login_required
-@body_content('form')
-def createTopic(form):
-	topic = MqttTopic(id=-1,active=form.pop('active','on').lower() in ["on","1"],created_at=datetime.now(),**form)
-	MqttTopic.storage.create(topic)
-	return redirect(url_for("topics.listTopics"))
-
-
-@topics_blueprint.route('/topic/<int:topic_id>')
-@login_required
-@topics_blueprint.with_dictionnary
-def viewTopic(topic_id):
-	topic = MqttTopic.storage.get(id=topic_id)
-	if topic is None:
-		return abort(404)
-
-	return AuthenticatedUserTemplate(
-		Path(topics_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
-		topic=topic,
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("topics").render()
-
-
-
-@topics_blueprint.route('/topic/<int:topic_id>', methods=["PUT", "PATCH"])
-@login_required
-@body_content('json')
-def editTopic(form, topic_id):
-    topic = MqttTopic.storage.get(id=topic_id)
-    if topic is None:
-        return abort(404)
-
-    topic.takeSnapshot().setAttributes(
-        **{field: form.get(field, topic[field]) for field in MqttTopic.UPDATABLE_FIELDS}
+def listTopics():
+    current_app.logger.debug("Route [topics.listTopics] called (json=%s, page=%s)", request.args.get('json'), request.args.get('page'))
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+    
+    pagination = paginate(repos['MqttTopic'], page=page, per_page=per_page)
+    
+    if request.args.get('json', 'false').lower() in ["1", "true"]:
+        return jsonify(pagination.to_dict())
+    
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/topics/list.html",
+        pagination=pagination
     )
 
 
-    MqttTopic.storage.updateOnSnapshot(topic)
-    return {"status":"updated", "data":topic.to_dict()}
-
-
-@topics_blueprint.route('/topic/<int:topic_id>', methods=["DELETE"])
+@bp.route('/unlinked_topics')
 @login_required
-def deleteMqttTopic(topic_id):
-    topic = MqttTopic.storage.get(id=topic_id)
+def listUnlnkedTopics():
+    current_app.logger.debug("Route [topics.listUnlnkedTopics] called (json=%s, page=%s)", request.args.get('json'), request.args.get('page'))
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+    
+    # Fetch topics that don't have associated devices
+    # TODO: Implement proper filtering logic if needed
+    pagination = paginate(repos['MqttTopic'], page=page, per_page=per_page)
+    
+    if request.args.get('json', 'false').lower() in ["1", "true"]:
+        return jsonify(pagination.to_dict())
+    
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/topics/list.html",
+        pagination=pagination
+    )
+
+
+@bp.route('/topic')
+@login_required
+def newTopic():
+    current_app.logger.debug("Route [topics.newTopic] serving new topic form")
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/topics/new.html"
+    )
+
+
+@bp.route('/topic', methods=["POST"])
+@login_required
+def createTopic():
+    current_app.logger.debug("Route [topics.createTopic] creating topic")
+    data = request.form.to_dict() if request.form else request.get_json()
+    topic = MqttTopic(
+        topic=data.get('topic'),
+        description=data.get('description'),
+        qos_default=int(data.get('qos_default', 0)),
+        active=data.get('active', 'on').lower() in ['on', '1', 'true'] if isinstance(data.get('active', 'on'), str) else bool(data.get('active')),
+        client_id=data.get('client_id'),
+        device_id=data.get('device_id'),
+        created_at=datetime.utcnow()
+    )
+    repos['MqttTopic'].create(topic)
+    current_app.logger.info("Route [topics.createTopic] topic created (id=%s)", topic.id)
+    return redirect(url_for("topics.listTopics"))
+
+
+@bp.route('/topic/<int:topic_id>')
+@login_required
+def viewTopic(topic_id):
+    current_app.logger.debug("Route [topics.viewTopic] called (topic_id=%s)", topic_id)
+    topic = repos['MqttTopic'].get(id=topic_id)
     if topic is None:
+        current_app.logger.warning("Route [topics.viewTopic] topic not found (id=%s)", topic_id)
         return abort(404)
 
-    MqttTopic.storage.delete(topic)
-    return {"status":"deleted", "data":topic.to_dict()}
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/topics/view.html",
+        topic=topic
+    )
+
+
+
+@bp.route('/topic/<int:topic_id>', methods=["PUT", "PATCH"])
+@login_required
+def editTopic(topic_id):
+    current_app.logger.debug("Route [topics.editTopic] called (topic_id=%s)", topic_id)
+    topic = repos['MqttTopic'].get(id=topic_id)
+    if topic is None:
+        current_app.logger.warning("Route [topics.editTopic] topic not found (id=%s)", topic_id)
+        return abort(404)
+
+    data = request.get_json() or request.form.to_dict()
+    updatable = {'topic', 'description', 'qos_default', 'active', 'client_id', 'device_id'}
+    update_dict = {k: v for k, v in data.items() if k in updatable}
+    
+    # Handle boolean conversion for active field
+    if 'active' in update_dict:
+        update_dict['active'] = update_dict['active'].lower() in ['true', '1', 'on'] if isinstance(update_dict['active'], str) else bool(update_dict['active'])
+    
+    # Handle integer conversion for qos_default
+    if 'qos_default' in update_dict:
+        update_dict['qos_default'] = int(update_dict['qos_default'])
+    
+    repos['MqttTopic'].update(topic, **update_dict)
+    current_app.logger.info("Route [topics.editTopic] topic updated (id=%s)", topic_id)
+    return jsonify(status="updated", data=topic.to_dict())
+
+
+@bp.route('/topic/<int:topic_id>', methods=["DELETE"])
+@login_required
+def deleteMqttTopic(topic_id):
+    current_app.logger.debug("Route [topics.deleteMqttTopic] called (topic_id=%s)", topic_id)
+    topic = repos['MqttTopic'].get(id=topic_id)
+    if topic is None:
+        current_app.logger.warning("Route [topics.deleteMqttTopic] topic not found (id=%s)", topic_id)
+        return abort(404)
+
+    topic_dict = topic.to_dict()
+    repos['MqttTopic'].delete(topic)
+    current_app.logger.info("Route [topics.deleteMqttTopic] topic deleted (id=%s)", topic_id)
+    return jsonify(status="deleted", data=topic_dict)

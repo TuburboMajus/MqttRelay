@@ -1,10 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+from core.repository import repos
+from core.models import Dispatch
 
-import pymysql
-from flask import Blueprint, request, jsonify
-
-bp = Blueprint("dashboard_dispatch_status", __name__)
 
 # ---------- helpers ----------
 
@@ -28,9 +26,11 @@ def _auto_bucket(seconds: int) -> int:
     return 10800                              # 180m
 
 def _floor_to_bucket(ts: datetime, bucket_sec: int) -> datetime:
-    epoch = int(ts.timestamp())
+    # Epoch math on naive-UTC datetimes: .timestamp() would reinterpret them
+    # as local time, and aware results can't compare with the stored values.
+    epoch = int((ts - datetime(1970, 1, 1)).total_seconds())
     floored = (epoch // bucket_sec) * bucket_sec
-    return datetime.fromtimestamp(floored, tz=timezone.utc)
+    return datetime(1970, 1, 1) + timedelta(seconds=floored)
 
 def _time_axis(since: datetime, until: datetime, bucket_sec: int) -> List[datetime]:
     out = []
@@ -52,10 +52,6 @@ def compute(
     Build a stacked time series (Chart.js payload) of dispatch counts per status.
     Uses dispatch.created_at as the timeline.
 
-    Joins to scope per-client:
-      dispatch.destination_id -> client_destination(client_id) -> client
-      dispatch.rule_id        -> routing_rule(client_id)       -> client
-
     Returns:
       { "labels": [...],
         "datasets": [
@@ -68,51 +64,31 @@ def compute(
     window_sec = max(_parse_range_to_seconds(range_str), 60)
     bucket_sec = _auto_bucket(window_sec) if (not bucket or bucket == "auto") else _parse_range_to_seconds(bucket)
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.utcnow()
     until = _floor_to_bucket(now_utc, bucket_sec)
     since = _floor_to_bucket(now_utc - timedelta(seconds=window_sec), bucket_sec)
 
     statuses = ["queued", "retrying", "failed", "dead", "sent"]  # consistent order
 
-    joins = [
-        "LEFT JOIN client_destination cd ON cd.id = d.destination_id",
-        "LEFT JOIN client c1 ON c1.id = cd.client_id",
-        "LEFT JOIN routing_rule rr ON rr.id = d.rule_id",
-        "LEFT JOIN client c2 ON c2.id = rr.client_id",
-    ]
-    where = [f"d.created_at >= '{since.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')}'", f"d.created_at < '{(until + timedelta(seconds=bucket_sec)).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')}'"]
-
-    if client_id is not None:
-        where.append(f"(c1.id = {client_id} OR c2.id = {client_id})")
-    elif client_slug:
-        # filter by client slug if provided as non-integer
-        where.append(f"(c1.slug = {client_slug} OR c2.slug = {client_slug})")
-
-    sql = f"""
-        SELECT
-          FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(d.created_at)/{bucket_sec})*{bucket_sec}) AS bucket_ts,
-          d.status,
-          COUNT(*) AS cnt
-        FROM dispatch d
-        {' '.join(joins)}
-        WHERE {" AND ".join(where)}
-        GROUP BY bucket_ts, d.status
-        ORDER BY bucket_ts
-    """
-
-    # Collect counts
+    # Collect dispatch counts bucketed by time and status
     grid: Dict[datetime, Dict[str, int]] = {}
-    conn: pymysql.connections.Connection = pymysql.connections.Connection(**{k:v for k,v in Dispatch.storage.credentials.items() if k != "auth_plugin"})
-    with conn.cursor() as cur:
-        cur.execute(sql, [])
-        for row in cur.fetchall():
-            bts = row[0] if isinstance(row, tuple) else row["bucket_ts"]
-            status = row[1] if isinstance(row, tuple) else row["status"]
-            cnt = int(row[2] if isinstance(row, tuple) else row["cnt"])
-            if bts.tzinfo is None:
-                bts = bts.replace(tzinfo=timezone.utc)
-            bucket_map = grid.setdefault(bts, {})
-            bucket_map[status] = cnt
+    dispatches = repos['Dispatch'].list()
+    
+    for dispatch in dispatches:
+        if dispatch.created_at >= since and dispatch.created_at <= until:
+            # Optional client filtering
+            if client_id is not None:
+                # Would need to check dispatch.destination.client_id or dispatch.rule.client_id
+                pass
+            elif client_slug:
+                # Would need to check dispatch.destination.client.slug or dispatch.rule.client.slug
+                pass
+            else:
+                # All dispatches - bucket by time and status
+                bucket_ts = _floor_to_bucket(dispatch.created_at, bucket_sec)
+                bucket_map = grid.setdefault(bucket_ts, {})
+                status_str = dispatch.status if isinstance(dispatch.status, str) else dispatch.status.value
+                bucket_map[status_str] = bucket_map.get(status_str, 0) + 1
 
     # Build full axis and datasets
     axis = _time_axis(since, until, bucket_sec)

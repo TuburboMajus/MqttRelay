@@ -1,114 +1,146 @@
-from flask import current_app, render_template, request, redirect, url_for, abort, session,g
-from flask_login import LoginManager, login_required, current_user
+from flask import current_app, render_template, request, redirect, url_for, abort, session, g, jsonify, Blueprint
+from flask_login import login_required, current_user
 
-from temod_flask.utils.content_readers import body_content
-from temod_flask.blueprint import MultiLanguageBlueprint
-from temod_flask.blueprint.utils import Paginator
-
-from front.renderers.users import AuthenticatedUserTemplate
-
-from temod.base.attribute import *
-from temod.base.condition import *
-
-from datetime import datetime, date
-from pathlib import Path
-
+from core.repository import repos
+from core.pagination import paginate
+from core.models import Parser, Metric
 from context import PARSERS_DB
 
-import traceback
-import json
+from datetime import datetime, date
+import logging
 
 
-parsers_blueprint = MultiLanguageBlueprint('parsers',__name__, load_in_g=True, default_config={
-	"templates_folder":"{language}/parsers",
-	"parsers_per_page":100,
-}, dictionnary_selector=lambda lg:lg['code'])
+PARSER_FILE_EXTENSIONS = {'python': 'py'}
+
+bp = Blueprint('parsers', __name__)
+
+def setup(config=None):
+    """Setup parsers blueprint with configuration."""
+    return bp
 
 
-@parsers_blueprint.route('/parsers')
+@bp.route('/parsers')
 @login_required
-@Paginator(parsers_blueprint, page_size_config="parsers_per_page").for_entity(Parser).with_filter(lambda x: Contains(StringAttribute("name",value=x.get('name','')))).with_default_filter(True).paginate
-@parsers_blueprint.with_dictionnary
-def listParsers(pagination):
-	if request.args.get('json','false').lower() in ["1","true"]:
-		return pagination.to_dict()['current']
-	return AuthenticatedUserTemplate(
-		Path(parsers_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
-		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("parsers").render()
-
-
-@parsers_blueprint.route('/parser')
-@login_required
-@parsers_blueprint.with_dictionnary
-def newParser():
-	return AuthenticatedUserTemplate(
-		Path(parsers_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("parsers").render()
-
-
-@parsers_blueprint.route('/parser',methods=["POST"])
-@login_required
-@body_content('form')
-def createParser(form):
-	for field in ["config_schema"]:
-		if form.get(field,"") is not None and form.get(field,'').strip() == "":
-			form[field] = None
-	print(form)
-	parser = Parser(id=-1,active=form.pop('active','on').lower() in ["on","1"],**form)
-	Parser.storage.create(parser)
-	return redirect(url_for("parsers.listParsers"))
-
-
-@parsers_blueprint.route('/parser/<int:parser_id>')
-@login_required
-@parsers_blueprint.with_dictionnary
-def viewParser(parser_id):
-	parser = Parser.storage.get(id=parser_id)
-	if parser is None:
-		return abort(404)
-
-	code_filename = "_".join([parser['name'].lower().replace(" ","_"), parser['version'].lower().replace('.','_')])
-	try:
-		code = PARSERS_DB.read(code_filename)
-	except:
-		code = None
-
-	return AuthenticatedUserTemplate(
-		Path(parsers_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
-		parser=parser, code=code, metrics=list(Metric.storage.list())
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("parsers").render()
-
-
-
-@parsers_blueprint.route('/parser/<int:parser_id>', methods=["PUT", "PATCH"])
-@login_required
-@body_content('json')
-def editParser(form, parser_id):
-    parser = Parser.storage.get(id=parser_id)
-    if parser is None:
-        return abort(404)
-
-    parser.takeSnapshot().setAttributes(
-        **{field: form.get(field, parser[field]) for field in Parser.UPDATABLE_FIELDS}
+def listParsers():
+    current_app.logger.debug("Route [parsers.listParsers] called (json=%s, page=%s)", request.args.get('json'), request.args.get('page'))
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+    
+    # Optional search filter by name
+    name_filter = request.args.get('name', '')
+    
+    pagination = paginate(repos['Parser'], page=page, per_page=per_page)
+    
+    if request.args.get('json', 'false').lower() in ["1", "true"]:
+        return jsonify(pagination.to_dict())
+    
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/parsers/list.html",
+        pagination=pagination
     )
 
-    if form.get('code') is not None:
-    	code_filename = "_".join([parser['name'].lower().replace(" ","_"), parser['version'].lower().replace('.','_')])
-    	PARSERS_DB.write(code_filename, form['code'], mode="")
-    	code_filename_with_suffix = f"{code_filename}.{Parser.FILE_EXTENSIONS[parser['language'].lower()].lower()}"
-    	PARSERS_DB.write(code_filename_with_suffix, form['code'], mode="")
 
-    Parser.storage.updateOnSnapshot(parser)
-    return {"status":"updated", "data":parser.to_dict()}
-
-
-@parsers_blueprint.route('/parser/<int:parser_id>', methods=["DELETE"])
+@bp.route('/parser')
 @login_required
-def deleteParser(parser_id):
-    parser = Parser.storage.get(id=parser_id)
+def newParser():
+    current_app.logger.debug("Route [parsers.newParser] serving new parser form")
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/parsers/new.html"
+    )
+
+
+@bp.route('/parser', methods=["POST"])
+@login_required
+def createParser():
+    current_app.logger.debug("Route [parsers.createParser] creating parser")
+    data = request.form.to_dict() if request.form else request.get_json()
+    
+    # Handle JSON fields - set to None if empty
+    for field in ["config_schema"]:
+        if data.get(field, "").strip() == "":
+            data[field] = None
+    
+    parser = Parser(
+        name=data.get('name'),
+        version=data.get('version'),
+        description=data.get('description'),
+        language=data.get('language', 'python'),
+        config_schema=data.get('config_schema'),
+        active=data.get('active', 'on').lower() in ['on', '1', 'true'] if isinstance(data.get('active', 'on'), str) else bool(data.get('active')),
+        created_at=datetime.utcnow()
+    )
+    repos['Parser'].create(parser)
+    current_app.logger.info("Route [parsers.createParser] parser created (id=%s)", parser.id)
+    return redirect(url_for("parsers.listParsers"))
+
+
+@bp.route('/parser/<int:parser_id>')
+@login_required
+def viewParser(parser_id):
+    current_app.logger.debug("Route [parsers.viewParser] called (parser_id=%s)", parser_id)
+    parser = repos['Parser'].get(id=parser_id)
     if parser is None:
+        current_app.logger.warning("Route [parsers.viewParser] parser not found (id=%s)", parser_id)
         return abort(404)
 
-    Parser.storage.delete(parser)
-    return {"status":"deleted", "data":parser.to_dict()}
+    code_filename = "_".join([parser.name.lower().replace(" ", "_"), parser.version.lower().replace('.', '_')])
+    try:
+        code = PARSERS_DB.read(code_filename)
+    except Exception:
+        current_app.logger.warning("Route [parsers.viewParser] parser source not found (file=%s)", code_filename)
+        code = None
+
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/parsers/view.html",
+        parser=parser, code=code, metrics=repos['Metric'].list()
+    )
+
+
+
+@bp.route('/parser/<int:parser_id>', methods=["PUT", "PATCH"])
+@login_required
+def editParser(parser_id):
+    current_app.logger.debug("Route [parsers.editParser] called (parser_id=%s)", parser_id)
+    parser = repos['Parser'].get(id=parser_id)
+    if parser is None:
+        current_app.logger.warning("Route [parsers.editParser] parser not found (id=%s)", parser_id)
+        return abort(404)
+
+    data = request.get_json() or request.form.to_dict()
+    updatable = {'name', 'version', 'description', 'language', 'config_schema', 'active'}
+    update_dict = {k: v for k, v in data.items() if k in updatable}
+    
+    # Handle boolean conversion for active field
+    if 'active' in update_dict:
+        update_dict['active'] = update_dict['active'].lower() in ['true', '1', 'on'] if isinstance(update_dict['active'], str) else bool(update_dict['active'])
+    
+    # Handle parser code file storage
+    if data.get('code') is not None:
+        code_filename = "_".join([parser.name.lower().replace(" ", "_"), parser.version.lower().replace('.', '_')])
+        PARSERS_DB.write(code_filename, data['code'])
+        # Also write with language-specific extension
+        try:
+            ext = PARSER_FILE_EXTENSIONS.get(parser.language.lower(), 'py')
+            code_filename_with_suffix = f"{code_filename}.{ext}"
+            PARSERS_DB.write(code_filename_with_suffix, data['code'])
+        except Exception as e:
+            current_app.logger.warning("Route [parsers.editParser] failed to write parser with extension (error=%s)", str(e))
+
+    repos['Parser'].update(parser, **update_dict)
+    current_app.logger.info("Route [parsers.editParser] parser updated (id=%s)", parser_id)
+    return jsonify(status="updated", data=parser.to_dict())
+
+
+@bp.route('/parser/<int:parser_id>', methods=["DELETE"])
+@login_required
+def deleteParser(parser_id):
+    current_app.logger.debug("Route [parsers.deleteParser] called (parser_id=%s)", parser_id)
+    parser = repos['Parser'].get(id=parser_id)
+    if parser is None:
+        current_app.logger.warning("Route [parsers.deleteParser] parser not found (id=%s)", parser_id)
+        return abort(404)
+
+    parser_dict = parser.to_dict()
+    repos['Parser'].delete(parser)
+    current_app.logger.info("Route [parsers.deleteParser] parser deleted (id=%s)", parser_id)
+    return jsonify(status="deleted", data=parser_dict)

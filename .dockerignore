@@ -1,0 +1,26 @@
+# VCS
+.git
+.gitignore
+
+# Python virtualenvs and bytecode caches
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets & local state — mounted at runtime, never baked into the image
+config.toml
+.env
+logs/
+*.log
+
+# Docker build files only (entrypoint + config generator ship inside the image)
+docker/Dockerfile
+docker/docker-compose.yml
+.dockerignore

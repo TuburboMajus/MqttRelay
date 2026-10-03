@@ -209,3 +209,4 @@ __marimo__/
 config.toml
 db/
 logs/
+backups/

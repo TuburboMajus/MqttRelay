@@ -45,5 +45,5 @@ if [ ! -z ${venv_path+x} ]; then
 fi
 
 cd $MQTT_RELAY
-echo "executing cmd: python "$SCRIPTPATH/mqtt_transfer.py" --root-dir "$MQTT_RELAY" $LOG_ARG"
-python "$SCRIPTPATH/mqtt_transfer.py" --root-dir "$MQTT_RELAY" $LOG_ARG
+echo "executing cmd: python "$SCRIPTPATH/mqtt_transfer_sqlalchemy.py" --root-dir "$MQTT_RELAY" $LOG_ARG"
+python "$SCRIPTPATH/mqtt_transfer_sqlalchemy.py" --root-dir "$MQTT_RELAY" $LOG_ARG

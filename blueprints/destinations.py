@@ -1,90 +1,109 @@
-from flask import current_app, render_template, request, redirect, url_for, abort, session,g
-from flask_login import LoginManager, login_required, current_user
+from flask import current_app, render_template, request, redirect, url_for, abort, session, g, jsonify, Blueprint
+from flask_login import login_required, current_user
 
-from temod_flask.utils.content_readers import body_content
-from temod_flask.blueprint import MultiLanguageBlueprint
-from temod_flask.blueprint.utils import Paginator
-
-from temod.base.attribute import *
-from temod.base.condition import *
-
-from front.renderers.users import AuthenticatedUserTemplate
+from core.repository import repos
+from core.pagination import paginate
+from core.models import ClientDestination
 
 from datetime import datetime, date
-from pathlib import Path
-
-import traceback
 import json
+import logging
 
 
-destinations_blueprint = MultiLanguageBlueprint('destinations',__name__, load_in_g=True, default_config={
-	"templates_folder":"{language}/destinations",
-	"destinations_per_page":100,
-}, dictionnary_selector=lambda lg:lg['code'])
+bp = Blueprint('destinations', __name__)
+
+def setup(config=None):
+    """Setup destinations blueprint with configuration."""
+    return bp
 
 
-@destinations_blueprint.route('/client_destinations')
+@bp.route('/client_destinations')
 @login_required
-@Paginator(destinations_blueprint, page_size_config="destinations_per_page").for_entity(ClientDestination).with_default_filter(True).paginate
-@destinations_blueprint.with_dictionnary
-def listDestinations(pagination):
-	if request.args.get('json','false').lower() in ["1","true"]:
-		return pagination.to_dict()['current']
-	return AuthenticatedUserTemplate(
-		Path(destinations_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
-		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("destinations").render()
+def listDestinations():
+    current_app.logger.debug("Route [destinations.listDestinations] called (json=%s, page=%s)", request.args.get('json'), request.args.get('page'))
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+    
+    pagination = paginate(repos['ClientDestination'], page=page, per_page=per_page)
+    
+    if request.args.get('json', 'false').lower() in ["1", "true"]:
+        return jsonify(pagination.to_dict())
+    
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/destinations/list.html",
+        pagination=pagination
+    )
 
 
-@destinations_blueprint.route('/client_destination')
+@bp.route('/client_destination')
 @login_required
-@destinations_blueprint.with_dictionnary
 def newDestination():
-	return AuthenticatedUserTemplate(
-		Path(destinations_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("destinations").render()
+    current_app.logger.debug("Route [destinations.newDestination] serving new destination form")
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/destinations/new.html"
+    )
 
 
-@destinations_blueprint.route('/client_destination',methods=["POST"])
+@bp.route('/client_destination', methods=["POST"])
 @login_required
-@body_content('form')
-def createDestination(form):
-	if form.get("options_json", ""):
-		if not isinstance(form["options_json"], str):
-			form["options_json"] = json.dumps(form["options_json"])
-	else:
-		form["options_json"] = None
-	destination = ClientDestination(id=-1, created_at=datetime.now(),**form)
-	ClientDestination.storage.create(destination)
-	return redirect(url_for("destinations.listDestinations"))
+def createDestination():
+    current_app.logger.debug("Route [destinations.createDestination] creating destination")
+    data = request.form.to_dict() if request.form else request.get_json()
+    
+    # Handle options_json field
+    options_json = data.get('options_json', '')
+    if options_json and isinstance(options_json, dict):
+        options_json = json.dumps(options_json)
+    elif not options_json or (isinstance(options_json, str) and options_json.strip() == ''):
+        options_json = None
+    
+    destination = ClientDestination(
+        client_id=data.get('client_id'),
+        type=data.get('type'),
+        host=data.get('host'),
+        port=int(data.get('port', 0)) if data.get('port') else None,
+        database_name=data.get('database_name'),
+        username=data.get('username'),
+        password_enc=data.get('password_enc'),
+        uri=data.get('uri'),
+        options_json=options_json,
+        active=data.get('active', 'true').lower() in ['true', '1', 'on'] if isinstance(data.get('active', 'true'), str) else bool(data.get('active')),
+        created_at=datetime.utcnow()
+    )
+    repos['ClientDestination'].create(destination)
+    current_app.logger.info("Route [destinations.createDestination] destination created (id=%s)", destination.id)
+    return redirect(url_for("destinations.listDestinations"))
 
 
-@destinations_blueprint.route('/client_destination/<int:destination_id>')
+@bp.route('/client_destination/<int:destination_id>')
 @login_required
-@destinations_blueprint.with_dictionnary
 def viewDestination(destination_id):
-	destination = ClientDestination.storage.get(id=destination_id)
-	if destination is None:
-		return abort(404)
+    current_app.logger.debug("Route [destinations.viewDestination] called (destination_id=%s)", destination_id)
+    destination = repos['ClientDestination'].get(id=destination_id)
+    if destination is None:
+        current_app.logger.warning("Route [destinations.viewDestination] destination not found (id=%s)", destination_id)
+        return abort(404)
 
-	return AuthenticatedUserTemplate(
-		Path(destinations_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
-		destination=destination
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("destinations").render()
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/destinations/view.html",
+        destination=destination
+    )
 
 
-@destinations_blueprint.route('/client_destination/<int:destination_id>/example')
+@bp.route('/client_destination/<int:destination_id>/example')
 @login_required
-@destinations_blueprint.with_dictionnary
 def viewExampleData(destination_id):
-	destination = ClientDestination.storage.get(id=destination_id)
-	if destination is None:
-		return abort(404)
+    current_app.logger.debug("Route [destinations.viewExampleData] called (destination_id=%s)", destination_id)
+    destination = repos['ClientDestination'].get(id=destination_id)
+    if destination is None:
+        current_app.logger.warning("Route [destinations.viewExampleData] destination not found (id=%s)", destination_id)
+        return abort(404)
 
-	options = destination['options_json']
-	if isinstance(options, str) and options.strip():
-		try:
-			return json.loads(options)
-		except Exception:
-			return options
-	return {}
+    options = destination.options_json
+    if isinstance(options, str) and options.strip():
+        try:
+            return jsonify(json.loads(options))
+        except Exception:
+            current_app.logger.warning("Route [destinations.viewExampleData] invalid JSON options for destination (id=%s)", destination_id)
+            return jsonify(options)
+    return jsonify({})

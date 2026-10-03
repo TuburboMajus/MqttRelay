@@ -28,8 +28,8 @@
 
       <!-- If you have joined names available, prefer them; otherwise show IDs -->
       <td>{{ route.client['name'] or route.client_id }}</td>
-      <td>{{ route.mqtt_topic['topic'] or route.topic_id or '—' }}</td>
-      <td>{% if 'device' in route.entities %} {{route['device']['name']}} {% else %} Any {%endif%}</td>
+      <td>{{ route.topic['topic'] or route.topic_id or '—' }}</td>
+      <td>{% if route.device %} {{ route.device['name'] }} {% else %} Any {%endif%}</td>
       <td>{{ route.parser['name'] or route.parser_id or '—' }}</td>
 
       <td>

@@ -1,12 +1,16 @@
 [Unit]
 Description=Parses and transfers data incomming through mqtt to clients
-After=mysql.service
+After=network-online.target postgresql.service
 StartLimitIntervalSec=0
 
 [Service]
-Type=oneshot
+# The SQLAlchemy worker is a continuous loop (one cycle every ~10s), so it
+# runs as a plain long-lived service; the mqtt_transfer.timer is obsolete.
+Type=simple
 User=root
 ExecStart=/bin/bash $script_path $logging_dir $venv_path
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

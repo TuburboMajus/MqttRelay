@@ -1,99 +1,118 @@
-from flask import current_app, render_template, request, redirect, url_for, abort, session,g
-from flask_login import LoginManager, login_required, current_user
+from flask import current_app, render_template, request, redirect, url_for, abort, session, g, jsonify, Blueprint
+from flask_login import login_required, current_user
 
-from temod_flask.utils.content_readers import body_content
-from temod_flask.blueprint import MultiLanguageBlueprint
-from temod_flask.blueprint.utils import Paginator
-
-from temod.base.attribute import *
-from temod.base.condition import *
-
-from front.renderers.users import AuthenticatedUserTemplate
+from core.repository import repos
+from core.pagination import paginate
+from core.models import DeviceType, Device, MqttMessage
 
 from datetime import datetime, date
-from pathlib import Path
-
-import traceback
-import json
+import logging
 
 
-devices_blueprint = MultiLanguageBlueprint('devices',__name__, load_in_g=True, default_config={
-	"templates_folder":"{language}/devices",
-	"devices_per_page":100,
-}, dictionnary_selector=lambda lg:lg['code'])
+bp = Blueprint('devices', __name__)
+
+def setup(config=None):
+    """Setup devices blueprint with configuration."""
+    return bp
 
 
-@devices_blueprint.route('/devices')
+@bp.route('/devices')
 @login_required
-@Paginator(devices_blueprint, page_size_config="devices_per_page").for_entity(DeviceType).with_default_filter(True).paginate
-@devices_blueprint.with_dictionnary
-def listDevices(pagination):
-	if request.args.get('json','false').lower() in ["1","true"]:
-		return pagination.to_dict()['current']
-	return AuthenticatedUserTemplate(
-		Path(devices_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
-		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("devices").render()
+def listDevices():
+    current_app.logger.debug("Route [devices.listDevices] called (json=%s, page=%s)", request.args.get('json'), request.args.get('page'))
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+    
+    pagination = paginate(repos['DeviceType'], page=page, per_page=per_page)
+    
+    if request.args.get('json', 'false').lower() in ["1", "true"]:
+        return jsonify(pagination.to_dict())
+    
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/devices/list.html",
+        pagination=pagination
+    )
 
 
-@devices_blueprint.route('/device')
+@bp.route('/device')
 @login_required
-@devices_blueprint.with_dictionnary
 def newDevice():
-	return AuthenticatedUserTemplate(
-		Path(devices_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("devices").render()
+    current_app.logger.debug("Route [devices.newDevice] serving new device form")
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/devices/new.html"
+    )
 
 
-@devices_blueprint.route('/device',methods=["POST"])
+@bp.route('/device', methods=["POST"])
 @login_required
-@body_content('form')
-def createDevice(form):
-	for field in ["capabilities","payload_schema","defaults_json"]:
-		if form.get(field,"") is not None and form.get(field,'').strip() == "":
-			form[field] = None
-	device = DeviceType(id=-1, created_at=datetime.now(),**form)
-	DeviceType.storage.create(device)
-	return redirect(url_for("devices.listDevices"))
+def createDevice():
+    current_app.logger.debug("Route [devices.createDevice] creating device type")
+    data = request.form.to_dict() if request.form else request.get_json()
+    
+    # Handle JSON fields - set to None if empty
+    for field in ["capabilities", "payload_schema", "defaults_json"]:
+        if data.get(field, "").strip() == "":
+            data[field] = None
+    
+    device = DeviceType(
+        vendor=data.get('vendor'),
+        model=data.get('model'),
+        kind=data.get('kind'),
+        capabilities=data.get('capabilities'),
+        payload_schema=data.get('payload_schema'),
+        defaults_json=data.get('defaults_json'),
+        created_at=datetime.utcnow()
+    )
+    repos['DeviceType'].create(device)
+    current_app.logger.info("Route [devices.createDevice] device type created (id=%s)", device.id)
+    return redirect(url_for("devices.listDevices"))
 
 
-@devices_blueprint.route('/device/<int:device_id>')
+@bp.route('/device/<int:device_id>')
 @login_required
-@devices_blueprint.with_dictionnary
 def viewDevice(device_id):
-	device = DeviceType.storage.get(id=device_id)
-	if device is None:
-		return abort(404)
+    current_app.logger.debug("Route [devices.viewDevice] called (device_id=%s)", device_id)
+    device = repos['DeviceType'].get(id=device_id)
+    if device is None:
+        current_app.logger.warning("Route [devices.viewDevice] device not found (id=%s)", device_id)
+        return abort(404)
 
-	return AuthenticatedUserTemplate(
-		Path(devices_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
-		device=device
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("devices").render()
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/devices/view.html",
+        device=device
+    )
 
 
-@devices_blueprint.route('/device/<int:device_id>/example')
+@bp.route('/device/<int:device_id>/example')
 @login_required
-@devices_blueprint.with_dictionnary
 def viewExampleData(device_id):
-	device = DeviceType.storage.get(id=device_id)
-	if device is None:
-		return abort(404)
+    current_app.logger.debug("Route [devices.viewExampleData] called (device_id=%s)", device_id)
+    device = repos['DeviceType'].get(id=device_id)
+    if device is None:
+        current_app.logger.warning("Route [devices.viewExampleData] device not found (id=%s)", device_id)
+        return abort(404)
 
-	examples = list(Device.storage.list(Not(Equals(StringAttribute("topic"))),device_type_id=device['id']))
-	for example in examples:
-		message = MqttMessage.storage.get(topic=example['topic'])
-		if message is not None:
-			return message['payload']
-	return {}
+    # Find devices of this type that have a topic
+    examples = repos['Device'].list(device_type_id=device.id)
+    for example in examples:
+        if example.topic:  # Skip if no topic assigned
+            message = repos['MqttMessage'].get(topic=example.topic)
+            if message is not None:
+                current_app.logger.info("Route [devices.viewExampleData] example payload found (device_id=%s)", device_id)
+                return message.payload if hasattr(message, 'payload') else {}
+    
+    return {}
 
 
-@devices_blueprint.route('/device/unique')
+@bp.route('/device/unique')
 @login_required
-@devices_blueprint.with_dictionnary
 def checkUnique():
-	vendor = (request.args.get("vendor") or "").strip()
-	model = (request.args.get("model") or "").strip()
-	if not vendor or not model:
-		return {"unique": False}
-	exists = DeviceType.storage.get(vendor=vendor, model=model) is not None
-	return {"unique": not exists}
+    vendor = (request.args.get("vendor") or "").strip()
+    model = (request.args.get("model") or "").strip()
+    current_app.logger.debug("Route [devices.checkUnique] called (vendor=%s, model=%s)", vendor, model)
+    
+    if not vendor or not model:
+        return jsonify(unique=False)
+    
+    exists = repos['DeviceType'].get(vendor=vendor, model=model) is not None
+    return jsonify(unique=not exists)

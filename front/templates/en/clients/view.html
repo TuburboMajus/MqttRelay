@@ -139,11 +139,11 @@
                 {% for dest in destinations or [] %}
                   <tr id="dest-row-{{ dest['id'] }}">
                     <td>#{{ dest['id'] }}</td>
-                    <td class="dest-type">{{ dest['type'].name.lower() }}</td>
+                    <td class="dest-type">{{ dest['type'].lower() }}</td>
                     <td class="dest-target">
-                      {% if dest['type'].name.lower() in ['mysql','postgres'] %}
+                      {% if dest['type'].lower() in ['mysql','postgres'] %}
                         {{ (dest['host'] or '-') ~ (':' ~ dest['port'] if dest['port'] else '') ~ ('/' ~ dest['database_name'] if dest['database_name'] else '') }}
-                      {% elif dest['type'] in ['http','kafka','file','other'] %}
+                      {% elif dest['type'].lower() in ['http','kafka','file','other'] %}
                         {{ dest['uri'] or '-' }}
                       {% else %}
                         -

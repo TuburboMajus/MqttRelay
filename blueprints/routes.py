@@ -1,117 +1,165 @@
-from flask import current_app, render_template, request, redirect, url_for, abort, session,g
-from flask_login import LoginManager, login_required, current_user
+from flask import current_app, render_template, request, redirect, url_for, abort, session, g, jsonify, Blueprint
+from flask_login import login_required, current_user
 
-from temod_flask.utils.content_readers import body_content
-from temod_flask.blueprint import MultiLanguageBlueprint
-from temod_flask.blueprint.utils import Paginator
-
-from front.renderers.users import AuthenticatedUserTemplate
+from core.repository import repos
+from core.pagination import paginate
+from core.models import RoutingRule, RouteDeposit, Parser
 
 from datetime import datetime, date
-from pathlib import Path
-
-import traceback
-import json
+import logging
 
 
-routes_blueprint = MultiLanguageBlueprint('routes',__name__, load_in_g=True, default_config={
-	"templates_folder":"{language}/routes",
-	"routingrules_per_page":100,
-}, dictionnary_selector=lambda lg:lg['code'])
+bp = Blueprint('routes', __name__)
+
+def setup(config=None):
+    """Setup routes blueprint with configuration."""
+    return bp
 
 
-@routes_blueprint.route('/routes')
+@bp.route('/routes')
 @login_required
-@Paginator(routes_blueprint, page_size_config="routingrules_per_page").for_entity(RoutingRuleFile).with_default_filter(True).paginate
-@routes_blueprint.with_dictionnary
-def listRoutingRules(pagination):
-	if request.args.get('json','false').lower() in ["1","true"]:
-		return pagination.to_dict()['current']
-	print(pagination.current)
-	return AuthenticatedUserTemplate(
-		Path(routes_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("list.html"),
-		pagination=pagination
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("routes").render()
+def listRoutingRules():
+    current_app.logger.debug("Route [routes.listRoutingRules] called (json=%s, page=%s)", request.args.get('json'), request.args.get('page'))
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+    
+    pagination = paginate(repos['RoutingRule'], page=page, per_page=per_page)
+    
+    if request.args.get('json', 'false').lower() in ["1", "true"]:
+        return jsonify(pagination.to_dict())
+    
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/routes/list.html",
+        pagination=pagination
+    )
 
 
-@routes_blueprint.route('/route')
+@bp.route('/route')
 @login_required
-@routes_blueprint.with_dictionnary
 def newRoutingRule():
-	return AuthenticatedUserTemplate(
-		Path(routes_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("new.html"),
-		parsers=list(Parser.storage.list())
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("routes").render()
+    current_app.logger.debug("Route [routes.newRoutingRule] serving new routing rule form")
+    parsers = repos['Parser'].list()
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/routes/new.html",
+        parsers=[p.to_dict() for p in parsers]
+    )
 
 
-@routes_blueprint.route('/route',methods=["POST"])
+@bp.route('/route', methods=["POST"])
 @login_required
-@body_content('form')
-def createRoutingRule(form):
-	destinations = form.pop("destination_ids[]",[])
-	deposits = []
+def createRoutingRule():
+    current_app.logger.debug("Route [routes.createRoutingRule] creating routing rule")
+    data = request.form.to_dict() if request.form else request.get_json()
+    
+    # Extract destination IDs from array format
+    destination_ids = request.form.getlist('destination_ids[]') if request.form else data.get('destination_ids', [])
+    
+    # Handle empty fields
+    for field in ['device_id', 'conditions']:
+        if data.get(field, '').strip() == '':
+            data[field] = None
+    
+    routingrule = RoutingRule(
+        client_id=data.get('client_id'),
+        topic_id=data.get('topic_id'),
+        device_id=data.get('device_id'),
+        parser_id=data.get('parser_id'),
+        parser_config=data.get('parser_config'),
+        active=data.get('active', 'on').lower() in ['on', '1', 'true'] if isinstance(data.get('active', 'on'), str) else bool(data.get('active')),
+        priority=int(data.get('priority', 0)),
+        conditions=data.get('conditions'),
+        created_at=datetime.utcnow()
+    )
+    repos['RoutingRule'].create(routingrule)
+    
+    # Create route deposits for each destination
+    for dest_id in destination_ids:
+        deposit = RouteDeposit(
+            rule_id=routingrule.id,
+            destination_id=int(dest_id),
+            created_at=datetime.utcnow()
+        )
+        repos['RouteDeposit'].create(deposit)
+    
+    current_app.logger.info("Route [routes.createRoutingRule] routing rule created (id=%s)", routingrule.id)
+    return redirect(url_for("routes.listRoutingRules"))
 
-	for field in ['device_id','conditions']:
-		if form.get('field','').strip() == '':
-			form[field] = None
 
-	routingrule = RoutingRule(id=RoutingRule.storage.generate_value('id'),created_at=datetime.now(),active=form.pop('active','on').lower() in ["on","1"],**form)
-	for destination in destinations:
-		deposits.append(RouteDeposit(rule_id=routingrule['id'], destination_id=int(destination)))
-
-	RoutingRule.storage.create(routingrule)
-	for deposit in deposits:
-		RouteDeposit.storage.create(deposit)
-	return redirect(url_for("routes.listRoutingRules"))
-
-
-@routes_blueprint.route('/route/<string:routingrule_id>')
+@bp.route('/route/<string:routingrule_id>')
 @login_required
-@routes_blueprint.with_dictionnary
 def viewRoutingRule(routingrule_id):
-	routingrule = RoutingRule.storage.get(id=routingrule_id)
-	if routingrule is None:
-		return abort(404)
+    current_app.logger.debug("Route [routes.viewRoutingRule] called (routingrule_id=%s)", routingrule_id)
+    routingrule = repos['RoutingRule'].get(id=routingrule_id)
+    if routingrule is None:
+        current_app.logger.warning("Route [routes.viewRoutingRule] routing rule not found (id=%s)", routingrule_id)
+        return abort(404)
 
-	return AuthenticatedUserTemplate(
-		Path(routes_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("view.html"),
-		rule=routingrule, destinations=list(RouteDepositDetails.storage.list(rule_id=routingrule['id']))
-	).handles_success_and_error().with_dictionnary().with_navbar().with_sidebar("routes").render()
+    # Fetch route deposits for this rule
+    destinations = repos['RouteDeposit'].list(rule_id=routingrule.id)
+    
+    return render_template(
+        f"{g.get('language', {}).get('code', 'en')}/routes/view.html",
+        rule=routingrule,
+        destinations=[d.to_dict() for d in destinations]
+    )
 
 
 
-@routes_blueprint.route('/route/<string:routingrule_id>', methods=["PUT", "PATCH"])
+@bp.route('/route/<string:routingrule_id>', methods=["PUT", "PATCH"])
 @login_required
-@body_content('json')
-def editRoutingRule(form, routingrule_id):
-	destinations = form.pop("destination_ids",[])
-	deposits = []
+def editRoutingRule(routingrule_id):
+    current_app.logger.debug("Route [routes.editRoutingRule] called (routingrule_id=%s)", routingrule_id)
+    data = request.get_json() or request.form.to_dict()
+    
+    # Extract destination IDs from array format
+    destination_ids = request.form.getlist('destination_ids[]') if request.form else data.get('destination_ids', [])
 
-	routingrule = RoutingRule.storage.get(id=routingrule_id)
-	if routingrule is None:
-		return abort(404)
+    routingrule = repos['RoutingRule'].get(id=routingrule_id)
+    if routingrule is None:
+        current_app.logger.warning("Route [routes.editRoutingRule] routing rule not found (id=%s)", routingrule_id)
+        return abort(404)
 
-	for destination in destinations:
-		deposits.append(RouteDeposit(rule_id=routingrule['id'], destination_id=int(destination)))
+    # Update rule fields
+    updatable = {'client_id', 'topic_id', 'device_id', 'parser_id', 'parser_config', 'active', 'priority', 'conditions'}
+    update_dict = {k: v for k, v in data.items() if k in updatable}
+    
+    # Handle boolean conversion
+    if 'active' in update_dict:
+        update_dict['active'] = update_dict['active'].lower() in ['true', '1', 'on'] if isinstance(update_dict['active'], str) else bool(update_dict['active'])
+    
+    # Handle priority as integer
+    if 'priority' in update_dict:
+        update_dict['priority'] = int(update_dict['priority'])
+    
+    repos['RoutingRule'].update(routingrule, **update_dict)
 
-	routingrule.takeSnapshot().setAttributes(
-		**{field: form.get(field, routingrule[field]) for field in RoutingRule.UPDATABLE_FIELDS}
-	)
-	RoutingRule.storage.updateOnSnapshot(routingrule)
+    # Update route deposits - delete old, create new
+    old_deposits = repos['RouteDeposit'].list(rule_id=routingrule.id)
+    for deposit in old_deposits:
+        repos['RouteDeposit'].delete(deposit)
+    
+    for dest_id in destination_ids:
+        deposit = RouteDeposit(
+            rule_id=routingrule.id,
+            destination_id=int(dest_id),
+            created_at=datetime.utcnow()
+        )
+        repos['RouteDeposit'].create(deposit)
+    
+    current_app.logger.info("Route [routes.editRoutingRule] routing rule updated (id=%s)", routingrule_id)
+    return jsonify(status="updated", data=routingrule.to_dict())
 
-	RouteDeposit.storage.delete(rule_id=routingrule['id'],many=True)
-	for deposit in deposits:
-		RouteDeposit.storage.create(deposit)
-	
-	return {"status":"updated", "data":routingrule.to_dict()}
 
-
-@routes_blueprint.route('/route/<string:routingrule_id>', methods=["DELETE"])
+@bp.route('/route/<string:routingrule_id>', methods=["DELETE"])
 @login_required
 def deleteRoutingRule(routingrule_id):
-	routingrule = RoutingRule.storage.get(id=routingrule_id)
-	if routingrule is None:
-		return abort(404)
+    current_app.logger.debug("Route [routes.deleteRoutingRule] called (routingrule_id=%s)", routingrule_id)
+    routingrule = repos['RoutingRule'].get(id=routingrule_id)
+    if routingrule is None:
+        current_app.logger.warning("Route [routes.deleteRoutingRule] routing rule not found (id=%s)", routingrule_id)
+        return abort(404)
 
-	RoutingRule.storage.delete(routingrule)
-	return {"status":"deleted", "data":routingrule.to_dict()}
+    rule_dict = routingrule.to_dict()
+    repos['RoutingRule'].delete(routingrule)
+    current_app.logger.info("Route [routes.deleteRoutingRule] routing rule deleted (id=%s)", routingrule_id)
+    return jsonify(status="deleted", data=rule_dict)

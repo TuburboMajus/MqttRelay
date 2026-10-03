@@ -1,16 +1,20 @@
-from temod_flask.blueprint import Blueprint
+from flask import Blueprint
+from core.repository import repos
+from core.models import MqttMessage
 
 from datetime import datetime, date
-
-import traceback
-import json
-import os
+import logging
 
 
-mqtt_blueprint = Blueprint('mqtt',__name__, default_config={})
+mqtt_bp = Blueprint('mqtt', __name__)
+
+def setup(config=None):
+    """Setup MQTT blueprint with configuration."""
+    return mqtt_bp
 
 
 def setup_mqtt(mqtt):
+    """Setup MQTT message handlers."""
 
     # MQTT hooks
     @mqtt.on_connect()
@@ -19,19 +23,32 @@ def setup_mqtt(mqtt):
         mqtt.subscribe("+/+/+", qos=0)
 
     @mqtt.on_disconnect()
-    def handle_disconnect(client, userdata, rc):
+    def handle_disconnect(*args, **kwargs):
+        # flask-mqtt 1.2.1 calls the disconnect handler with NO arguments
+        # (_handle_disconnect -> self._disconnect_handler()), unlike on_connect
+        # which forwards (client, userdata, flags, rc). Accept *args/**kwargs so
+        # this survives both the current behaviour and a future flask-mqtt fix,
+        # and never crashes the paho network thread.
+        rc = args[2] if len(args) > 2 else kwargs.get('rc', 'unknown')
         mqtt.app.logger.warning(f"Disconnected from MQTT broker (rc={rc})")
 
     @mqtt.on_message()
     def handle_mqtt_message(client, userdata, message):
         try:
-            MqttMessage.storage.create(MqttMessage(
-                id=-1, client=message.topic.split("/")[0], topic=message.topic, payload=message.payload.decode("utf-8", errors="replace") if message.payload else None,
-                qos=message.qos, at=datetime.now()
-            ))
+            payload_str = message.payload.decode("utf-8", errors="replace") if message.payload else None
+            mqtt_message = MqttMessage(
+                client=message.topic.split("/")[0],
+                topic=message.topic,
+                payload=payload_str,
+                qos=message.qos,
+                at=datetime.utcnow()
+            )
+            repos['MqttMessage'].create(mqtt_message)
+            mqtt.app.logger.debug(f"Stored MQTT message from topic {message.topic} (qos={message.qos})")
         except Exception as e:
             mqtt.app.logger.exception(f"Failed to store message from topic {message.topic}: {e}")
 
-    return mqtt_blueprint
+    return mqtt_bp
 
-mqtt_blueprint.setup_mqtt = setup_mqtt
+
+mqtt_bp.setup_mqtt = setup_mqtt

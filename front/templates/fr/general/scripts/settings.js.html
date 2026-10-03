@@ -285,14 +285,6 @@ document.getElementById('addMetricForm').addEventListener('submit', async (e) =>
 
   const key = document.getElementById('key_name');
 
-  const refVal = ref.value.trim();
-  if (refVal && !/^[A-Za-z0-9]{3}$/.test(refVal)) {
-    ref.classList.add('is-invalid');
-    return;
-  } else {
-    ref.classList.remove('is-invalid');
-  }
-
   if (!form.checkValidity()) {
     form.classList.add('was-validated');
     return;
@@ -301,7 +293,7 @@ document.getElementById('addMetricForm').addEventListener('submit', async (e) =>
   btn.disabled = true; spinner.classList.remove('d-none');
 
   const payload = {
-    key_name: key.value.trim(),
+    name: key.value.trim(),
     default_unit: document.getElementById('default_unit').value.trim() || null,
     description: document.getElementById('description_metric').value || null
   };
@@ -321,7 +313,7 @@ document.getElementById('addMetricForm').addEventListener('submit', async (e) =>
     const rowHTML = `
       <tr id="metric-row-${metric.id}">
         <td>#${metric.id}</td>
-        <td class="m-key"><code>${metric.key_name}</code></td>
+        <td class="m-key"><code>${metric.name}</code></td>
         <td class="m-unit">${metric.default_unit || '-'}</td>
         <td class="m-desc text-muted">${metric.description || '—'}</td>
         <td class="text-end">

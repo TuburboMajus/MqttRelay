@@ -1,19 +1,26 @@
-from flask import Flask, redirect, url_for
+from flask import Flask, redirect, url_for, g, session, request
 from flask_mqtt import Mqtt
-from flask_login import current_user, login_required
-
-from temod_flask.security.authentification import Authenticator, TemodUserHandler
-
-from temod.ext.holders import init_holders
+from flask_login import current_user, login_required, LoginManager
 
 from context import *
+from core.models import User, Language
+from core.repository import repos
+from core.auth import get_user_by_id
 
 import traceback
 import mimetypes
 import yaml
 import toml
 import json
+import logging
+import ssl
 import os
+import secrets
+
+
+def generate_secret_key(length: int = 32) -> str:
+    """Generate a random secret key for Flask."""
+    return secrets.token_hex(length // 2)
 
 
 # ** Section ** MimetypesDefinition
@@ -34,12 +41,6 @@ with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),"dictionnary.
 
 
 # ** Section ** ContextCreation
-init_holders(
-	entities_dir=os.path.join(config['temod']['core_directory'],r"entity"),
-	joins_dir=os.path.join(config['temod']['core_directory'],r"join"),
-	databases=config['temod']['bound_database'],
-	db_credentials=config['storage']['credentials']
-)
 init_context(config)
 # ** EndSection ** ContextCreation
 
@@ -69,9 +70,23 @@ def build_app(**app_configuration):
 
 	secret_key = config['app'].get('secret_key','')
 	app.secret_key = secret_key if len(secret_key) > 0 else generate_secret_key(32)
+
+	# ** Section ** LoggingLevel
+	_log_level = (config['app'].get('log_level') or ('DEBUG' if config['app'].get('debug') else 'INFO')).strip().upper()
+	app.logger.setLevel(getattr(logging, _log_level, logging.INFO))
+	# ** EndSection ** LoggingLevel
+
 	app.config.update({k:v for k,v in config['app'].items() if not type(v) is dict})
 	app.config.update({f"MQTT_{k.upper()}":v for k,v in config['mqtt'].items() if not type(v) is dict})
-	app.config['LANGUAGES'] = {language["code"]:language for language in Language.storage.list()}
+	# flask-mqtt defaults tls_version to the deprecated ssl.PROTOCOL_TLSv1, which modern
+	# brokers reject (TLS handshake never completes -> on_connect/subscribe never fire).
+	# Force the non-deprecated auto-negotiating TLS client context unless overridden.
+	app.config.setdefault('MQTT_TLS_VERSION', ssl.PROTOCOL_TLS_CLIENT)
+	# Load languages from database
+	languages = repos['Language'].list()
+	app.config['LANGUAGES'] = {lang.code: {'code': lang.code, 'name': lang.name} for lang in languages}
+	if not app.config['LANGUAGES']:
+		print("Warning: No languages configured in database")
 	print(app.config['LANGUAGES'])
 	app.config['DICTIONNARY'] = dictionnary
 
@@ -79,28 +94,51 @@ def build_app(**app_configuration):
 	import blueprints
 
 	# ** Section ** Authentification
-	AUTHENTICATOR = Authenticator(TemodUserHandler(
-		joins.UserAccount, "mysql", logins=['email'], **config['storage']['credentials']
-	),login_view="auth.login")
-	AUTHENTICATOR.init_app(app)
+	login_manager = LoginManager()
+	login_manager.init_app(app)
+	login_manager.login_view = 'auth.login'
+
+	@login_manager.user_loader
+	def load_user(user_id):
+		return get_user_by_id(user_id)
 	# ** EndSection ** Authentification
 
+	# ** Section ** LanguageContext
+	@app.before_request
+	def set_language():
+		lang_code = session.get('lg') or request.args.get('lg')
+		if not lang_code or lang_code not in app.config['LANGUAGES']:
+			lang_code = config['app'].get('default_language', 'en')
+		if lang_code not in app.config['LANGUAGES'] and app.config['LANGUAGES']:
+			lang_code = next(iter(app.config['LANGUAGES']))
+		g.language = app.config['LANGUAGES'].get(lang_code, {'code': 'en', 'name': 'English'})
+
+	@app.context_processor
+	def inject_globals():
+		return {
+			'language': g.get('language', {'code': 'en', 'name': 'English'}),
+			'languages': app.config['LANGUAGES'].values(),
+			'dictionnary': app.config.get('DICTIONNARY', {}),
+		}
+	# ** EndSection ** LanguageContext
+
 	auth_blueprint_config = config['app'].get('blueprints',{}).get('auth',{})
-	auth_blueprint_config['authenticator'] = AUTHENTICATOR
 
 	mqtt_blueprint_config = config['app'].get('blueprints',{}).get('mqtt',{})
-	app.register_blueprint(blueprints.destinations_blueprint.setup(config['app'].get('blueprints',{}).get('destinations',{})))
-	app.register_blueprint(blueprints.dashboard_blueprint.setup(config['app'].get('blueprints',{}).get('dashboard',{})))
-	app.register_blueprint(blueprints.clients_blueprint.setup(config['app'].get('blueprints',{}).get('clients',{})))
-	app.register_blueprint(blueprints.devices_blueprint.setup(config['app'].get('blueprints',{}).get('devices',{})))
-	app.register_blueprint(blueprints.parsers_blueprint.setup(config['app'].get('blueprints',{}).get('parsers',{})))
-	app.register_blueprint(blueprints.general_blueprint.setup(config['app'].get('blueprints',{}).get('general',{})))
-	app.register_blueprint(blueprints.metrics_blueprint.setup(config['app'].get('blueprints',{}).get('metrics',{})))
-	app.register_blueprint(blueprints.topics_blueprint.setup(config['app'].get('blueprints',{}).get('topics',{})))
-	app.register_blueprint(blueprints.routes_blueprint.setup(config['app'].get('blueprints',{}).get('routes',{})))
-	app.register_blueprint(blueprints.users_blueprint.setup(config['app'].get('blueprints',{}).get('users',{})))
-	app.register_blueprint(blueprints.mqtt_blueprint.setup(mqtt_blueprint_config).setup_mqtt(Mqtt(app)))
-	app.register_blueprint(blueprints.auth_blueprint.setup(auth_blueprint_config))
+	app.register_blueprint(blueprints.destinations.setup(config['app'].get('blueprints',{}).get('destinations',{})))
+	app.register_blueprint(blueprints.dashboard.setup(config['app'].get('blueprints',{}).get('dashboard',{})))
+	app.register_blueprint(blueprints.clients.setup(config['app'].get('blueprints',{}).get('clients',{})))
+	app.register_blueprint(blueprints.devices.setup(config['app'].get('blueprints',{}).get('devices',{})))
+	app.register_blueprint(blueprints.parsers.setup(config['app'].get('blueprints',{}).get('parsers',{})))
+	app.register_blueprint(blueprints.general.setup(config['app'].get('blueprints',{}).get('general',{})))
+	app.register_blueprint(blueprints.metrics.setup(config['app'].get('blueprints',{}).get('metrics',{})))
+	app.register_blueprint(blueprints.topics.setup(config['app'].get('blueprints',{}).get('topics',{})))
+	app.register_blueprint(blueprints.routes.setup(config['app'].get('blueprints',{}).get('routes',{})))
+	app.register_blueprint(blueprints.users.setup(config['app'].get('blueprints',{}).get('users',{})))
+	mqtt_bp = blueprints.mqtt.setup(mqtt_blueprint_config)
+	blueprints.mqtt.setup_mqtt(Mqtt(app, connect_async=True))
+	app.register_blueprint(mqtt_bp)
+	app.register_blueprint(blueprints.auth.setup(auth_blueprint_config))
 	# ** EndSection ** Blueprint**
 
 	# ** Section ** AppMainRoutes

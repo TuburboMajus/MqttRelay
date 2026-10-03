@@ -37,7 +37,8 @@ def load_configs(root_dir):
 # Function to set up logging
 def get_logger(logging_dir):
 	"""Create and configure a logger with file and console handlers"""
-	os.makedirs(logging_dir, exist_ok=True)
+	if logging_dir is not None:
+		os.makedirs(logging_dir, exist_ok=True)
 
 	logger = logging.getLogger()
 	logger.setLevel(logging.INFO)
@@ -106,6 +107,17 @@ class DispatcherNotFound(Exception):
 class DepositNotFound(Exception):
 	pass
 		
+
+class DisabledTopic(Exception):
+	pass
+		
+
+class LanguageNotHandled(Exception):
+	pass
+		
+
+class DestinationNotFound(Exception):
+	pass
 		
 
 class MqttTransfer(object):
@@ -120,7 +132,8 @@ class MqttTransfer(object):
 			"metrics":MysqlEntityStorage(entities.Metric,**mysql_credentials),
 			"parsed_points":MysqlEntityStorage(entities.ParsedPoint,**mysql_credentials),
 			"extractions":MysqlEntityStorage(entities.Extraction,**mysql_credentials),
-			"clients":MysqlEntityStorage(entities.Parser,**mysql_credentials),
+			"clients":MysqlEntityStorage(entities.Client,**mysql_credentials),
+			"device_types":MysqlEntityStorage(entities.DeviceType,**mysql_credentials),
 			"topics":MysqlEntityStorage(entities.MqttTopic,**mysql_credentials),
 			"devices":MysqlEntityStorage(entities.Device,**mysql_credentials),
 			"routes":MysqlEntityStorage(entities.RoutingRule,**mysql_credentials),
@@ -155,7 +168,7 @@ class MqttTransfer(object):
 
 	def _load_device_type(self, device_type_id):
 		if not device_type_id in self.device_types_cache:
-			self.device_types_cache[device_type_id] = self.storages['metrics'].get(id=device_type_id)
+			self.device_types_cache[device_type_id] = self.storages['device_types'].get(id=device_type_id)
 			if self.device_types_cache[device_type_id] is None:
 				raise DeviceTypeNotFound(f"Device Type #{device_type_id} doesn't exist in the database")
 		return self.device_types_cache[device_type_id]
@@ -190,21 +203,23 @@ class MqttTransfer(object):
 			context = {
 				"device":device.to_dict(), "device_type": self._load_device_type(device['device_type_id']).to_dict(), "topic": topic.to_dict(),"message": message.to_dict()
 			}
-			if route['conditions'] is not None and route['conditions'].strip() != "":
+			if route['conditions'] is not None and str(route['conditions']).strip() != "":
 				try:
-					evaluation = eval_mongo_dsl(route['conditions'], **context)
-					if not eval_mongo_dsl(route['conditions'], **context):
+					conditions = json.loads(route['conditions']) if isinstance(route['conditions'], str) else route['conditions']
+					evaluation = eval_mongo_dsl(conditions, context)
+					if not evaluation:
 						continue
 					evaluated[route['id']] = 1
 				except:
-					LOGGER.warning(f"condition in route {route['id']} has failed to be evaulated for context {json.dumps(context)}. Route will be considered conditionless and its priority will be decreased.")
+					LOGGER.warning(f"condition in route {route['id']} has failed to be evaulated for context {json.dumps(context, default=str)}. Route will be considered conditionless and its priority will be decreased.")
 					evaluated[route['id']] = -1
 			candidates.append(route)
 
 		prioritary = []
 		if len(candidates):
 			prioritary = [candidate for candidate in candidates if candidate['priority'] == min([c['priority'] for c in candidates])]
-			prioritary = [candidate for candidate in prioritary if candidate['priority']-evaluated.get(candidate['id'],0) == min([c['priority']-evaluated.get(candidate['id'],0) for c in prioritary])]
+			effective_min = min(c['priority'] - evaluated.get(c['id'], 0) for c in prioritary)
+			prioritary = [candidate for candidate in prioritary if candidate['priority'] - evaluated.get(candidate['id'], 0) == effective_min]
 
 		prioritary = sorted(prioritary, key=lambda x:x['created_at'], reverse=True)
 		if len(prioritary) > 1:
@@ -213,7 +228,7 @@ class MqttTransfer(object):
 			raise NoRouteFound(f"No route found to manage message #{message['id']}")
 
 		selected = prioritary[0]
-		LOGGER.info(f"Route #{route['id']} has been selected for message #{message['id']}")
+		LOGGER.info(f"Route #{selected['id']} has been selected for message #{message['id']}")
 
 		try:
 			json.loads(selected['parser_config'] or "{}")
@@ -241,9 +256,10 @@ class MqttTransfer(object):
 		results = parse_function(json.loads(message['payload']) if type(message['payload']) is str else message['payload'], **json.loads(route['parser_config'] or "{}"))
 
 		if not results:
-			extraction['error'] = f"Parsing function didn't return any result for message #{message['id']}: {json.dumps(message['payload'])}"
-			LOGGER.warning(extraction['error'])
+			extraction['error_text'] = f"Parsing function didn't return any result for message #{message['id']}: {json.dumps(message['payload'])}"
+			LOGGER.warning(extraction['error_text'])
 			extraction['success'] = False
+			extraction['extracted_count'] = 0
 		else:
 			extraction['extracted_count'] = len(results)
 
@@ -269,7 +285,7 @@ class MqttTransfer(object):
 			parsed.append(entities.ParsedPoint(
 				id=-1, extraction_id=extraction['id'],device_id=device['id'],metric_id=metric_id, ts=ts, unit=metric['default_unit'], quality=self.judge_data_quality(
 					metric, value
-				), meta_json=json.dumps({k:v for k,v in results.items() if not type(k) is int}),**{value_field:transformer(value)}
+				), meta_json=json.dumps({k:v for k,v in results.items() if (not type(k) is int) and k != "at"}),**{value_field:transformer(value)}
 			))
 
 		return parsed, entities.Extraction(**extraction), route
@@ -304,7 +320,7 @@ class MqttTransfer(object):
 		LOGGER.info(f"Dispatcher of type {dispatcher_class.__name__} has been loaded and initialized successfully")
 		is_asynchronous = getattr(dispatcher,'asynchronous',False)
 		if is_asynchronous:
-			dispatcher.setCallback(lambda *x,**y: self.on_data_sent(deposit, *x, **y))
+			dispatcher.setCallback(lambda *x,**y: self.on_data_sent(dispatch, *x, **y))
 
 		try:
 			results = dispatcher.dispatch(parsed_points=[dp.to_dict() for dp in data_points])
@@ -340,7 +356,7 @@ class MqttTransfer(object):
 		return all(dispatched)
 
 
-	def process(self, directory):
+	def process(self):
 
 		data_treated = []
 		to_treat = list(self.storages['mqtt_messages'].list(processed=False))
@@ -365,30 +381,41 @@ class MqttTransfer(object):
 				data_treated.append(sent)
 
 			except:
-				LOGGER.error(f"Error while processing mqtt mqtt_message {json.dumps(mqtt_message.to_dict())}")
+				LOGGER.error(f"Error while processing mqtt mqtt_message {json.dumps(mqtt_message.to_dict(), default=str)}")
 				LOGGER.error(traceback.format_exc())
 				data_treated.append(False)
 
 		return all(data_treated)
 
 
+def _get_or_create_job(storage):
+	MqttTransferJob = storage.get(name=MQTTT_JOB_NAME)
+	if MqttTransferJob is None:
+		# last_exit_code=0 placeholder (Temod can't translate None to SQL NULL); stop_run overwrites it each run.
+		MqttTransferJob = entities.Job(name=MQTTT_JOB_NAME, state="IDLE", last_state_update=datetime.now(), last_exit_code=0)
+		storage.create(MqttTransferJob)
+	return MqttTransferJob
+
 def already_running(**mysql_credentials):
-	MqttTransferJob = MysqlEntityStorage(entities.Job, **mysql_credentials).get(name=MQTTT_JOB_NAME)
+	storage = MysqlEntityStorage(entities.Job, **mysql_credentials)
+	MqttTransferJob = _get_or_create_job(storage)
 	if MqttTransferJob['state'] == "RUNNING":
 		return True
 	return False
 
 def start_run(**mysql_credentials):
 	storage = MysqlEntityStorage(entities.Job, **mysql_credentials)
-	MqttTransferJob = storage.get(name=MQTTT_JOB_NAME).takeSnapshot()
+	MqttTransferJob = _get_or_create_job(storage).takeSnapshot()
 	MqttTransferJob.setAttribute("state","RUNNING")
+	MqttTransferJob.setAttribute("last_state_update",datetime.now())
 	storage.updateOnSnapshot(MqttTransferJob)
 
 def stop_run(exit_code, **mysql_credentials):
 	storage = MysqlEntityStorage(entities.Job, **mysql_credentials)
-	MqttTransferJob = storage.get(name=MQTTT_JOB_NAME).takeSnapshot()
+	MqttTransferJob = _get_or_create_job(storage).takeSnapshot()
 	MqttTransferJob.setAttribute("state","IDLE")
 	MqttTransferJob.setAttribute("last_exit_code",exit_code)
+	MqttTransferJob.setAttribute("last_state_update",datetime.now())
 	storage.updateOnSnapshot(MqttTransferJob)
 	if exit_code != 0:
 		sys.exit(exit_code)
@@ -401,7 +428,7 @@ def launch(config):
 
 	mqttt = MqttTransfer(**config["storage"]["credentials"])
 
-	results = mqttt.process(PARSERS_DB_FOLDER)	
+	results = mqttt.process()
 	exit_code=0	
 	if results is not None:
 		if results:

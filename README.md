@@ -2,15 +2,22 @@
 
 MqttRelay is a multi-tenant **IoT data ingestion and distribution platform**. It connects to an
 MQTT broker, persists every incoming message, turns raw payloads into **normalized time-series
-metrics** through versioned, per-client **parsers**, and finally **dispatches** those metrics to
-the correct downstream sink (per client) according to configurable routing rules. A **web
-dashboard** lets operators manage the whole pipeline — clients, devices, topics, parsers, metrics,
-routes, destinations, users and encryption — and monitor activity.
+metrics** through versioned, per-client **parsers**, and routes those metrics toward each
+client's downstream sink according to configurable routing rules. A **web dashboard** lets
+operators manage the whole pipeline — clients, devices, topics, parsers, metrics, routes,
+destinations, users and encryption — and monitor activity.
+
+> **Migration note** — MqttRelay recently migrated from the `temod` ORM + MySQL to
+> **SQLAlchemy 2.0 + PostgreSQL**. The web dashboard and the background worker run entirely on
+> the new stack. Some legacy temod-based modules are still present in the tree (see
+> [Legacy code](#legacy-code-pre-migration)) but are **not** used by the running application and
+> cannot even be imported with the pinned `requirements.txt`. See `MIGRATION_STATUS.md` and
+> `POSTGRES_MIGRATION_GUIDE.md` for the full migration history.
 
 ```
-MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
+MQTT broker ──► Flask-MQTT ──► mqtt_message (raw, processed = false)
                                      │
-              systemd timer: mqtt_transfer (every ~10s)
+        background worker: mqtt_transfer_sqlalchemy.py (loop, every ~10s)
                                      ▼
               resolve sender: topic → device → client
                                      ▼
@@ -20,9 +27,9 @@ MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
                                      ▼
               extraction + parsed_point (normalized)
                                      ▼
-              route_deposit → client_destination → dispatcher
+              route_deposit → client_destination → dispatcher (mysql/postgres)
                                      ▼
-                            client's own database (MySQL)
+                       client's own database (dispatch ledger kept)
 ```
 
 ---
@@ -40,8 +47,11 @@ MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Running](#running)
+- [Migrating from the MySQL/temod version](#migrating-from-the-mysqltemod-version)
+- [Tests](#tests)
 - [Dashboard](#dashboard)
 - [REST Endpoints](#rest-endpoints)
+- [Legacy code (pre-migration)](#legacy-code-pre-migration)
 - [Known issues / rough edges](#known-issues--rough-edges)
 - [License](#license)
 
@@ -51,14 +61,15 @@ MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
 
 - **MQTT ingestion** — subscribes to the broker (wildcard pattern `+/+/+`) and stores every raw
   message in the `mqtt_message` table.
-- **Parsing** — a recurring background job runs a versioned parser against each unprocessed
-  message and writes normalized points to `parsed_point`, keyed to a shared `metric_catalog`.
+- **Parsing** — a background worker runs a versioned parser against each unprocessed message and
+  writes normalized points to `parsed_point`, keyed to a shared `metric_catalog`.
 - **Routing** — routing rules map (client, topic, device) to a parser and a list of
   destinations, with optional content-based conditions and priorities.
 - **Dispatching** — parsed points are delivered to each client's own `client_destination`
-  (currently a **MySQL** sink; pluggable via `services/mqtt_transfer/dispatchers/`).
-- **Web dashboard** — Flask + Jinja2 + Bootstrap 5 UI to manage everything, in multiple
-  languages (EN/FR/ES/AR).
+  (**MySQL** and **PostgreSQL** sinks via `services/mqtt_transfer/dispatchers/`), with every
+  attempt recorded in the `dispatch` ledger.
+- **Web dashboard** — Flask + Jinja2 + Bootstrap 5 UI to manage everything (fully wired
+  languages: EN/FR; see Known issues for ES/AR status).
 - **Secrets protection** — reversible encryption for third-party service credentials
   (e.g. destination DB passwords), with key rotation and re-encryption.
 
@@ -69,36 +80,55 @@ MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
 ```
 .
 ├── run.py                        # Flask app factory + dev entrypoint
-├── context.py                    # Registers entities/joins/clusters as globals; PARSERS_DB
+├── context.py                    # init_context(): DB init, registers models/repos as globals;
+│                                 #   PARSERS_DB (DirectoryStorage for parser files)
 ├── config.toml / .template       # Runtime config (DB, MQTT, Flask) / template used by installer
 ├── dictionnary.yml               # UI strings per language
 ├── requirements.txt
 ├── run.sh                        # gunicorn launcher for the dashboard
+├── pytest.ini                    # Test collection config (services/mqtt_transfer/tests)
 ├── core/
-│   ├── entity/                   # Temod entities = DB tables (mqtt.py, iot.py, client.py,
-│   │                             #   parser.py, user.py, app.py)
-│   ├── join/                     # Temod joins (client.py, iot.py, mqtt.py, user.py)
-│   └── constraints.py            # EqualityConstraint definitions used by joins
+│   ├── db.py                     # SQLAlchemy engine/session management (init_db, get_session)
+│   ├── models.py                 # SQLAlchemy declarative models (all tables)
+│   ├── repository.py             # Generic Repository layer + `repos` registry
+│   ├── auth.py                   # Password hashing (bcrypt) + user lookup helpers
+│   ├── crypto.py                 # Encrypt/decrypt helpers over crypto_config
+│   ├── pagination.py             # List pagination helpers for the UI
+│   ├── entity/, join/,           # LEGACY temod modules — unused by the running app
+│   └── constraints.py            #   (see "Legacy code" below)
 ├── blueprints/                   # Flask blueprints (one per domain)
 │   ├── auth.py  clients.py  dashboard.py  destinations.py  devices.py
 │   ├── general.py  metrics.py  mqtt.py  parsers.py  routes.py  topics.py  users.py
 │   └── dashboards/               # Metric computations behind dashboard API endpoints
-├── services/mqtt_transfer/       # The background ingest→parse→dispatch job
-│   ├── mqtt_transfer.py          # MqttTransfer worker (process loop)
-│   ├── dispatchers/              # Output sinks (mysql.py)
-│   └── mqtt_transfer.{service,timer,sh}  # systemd unit/timer/launcher
-├── db/parsers/                   # Parser source modules (DirectoryStorage)
+├── services/mqtt_transfer/       # The background ingest→parse(→dispatch) job
+│   ├── mqtt_transfer_sqlalchemy.py  # CURRENT worker (SQLAlchemy, continuous loop, job lock)
+│   ├── mqtt_transfer.py          # LEGACY worker (temod/MySQL — cannot run with current deps)
+│   ├── dispatchers/              # Output sinks (mysql.py, postgres.py)
+│   ├── mqtt_transfer.{service,sh}   # systemd unit (long-running) + launcher; timer obsolete
+│   ├── tests/                    # Pytest suite (targets the legacy worker)
+│   └── README.md                 # Detailed worker docs (partially outdated, pre-migration)
+├── db/parsers/                   # Parser source modules (DirectoryStorage; git-ignored)
 ├── tools/
 │   ├── crypto_envelopes.py       # AES-GCM / ChaCha20-Poly1305 / AES-CBC+HMAC
 │   └── json_conditions.py        # MongoDB-style condition DSL evaluator
 ├── front/
-│   ├── renderers/                # Template rendering helpers (Base/AuthenticatedUser)
-│   └── templates/                # Per-language Jinja2 templates (en/, es/, fr/, ar/)
+│   ├── renderers/                # Template rendering helpers (BaseTemplate)
+│   └── templates/                # Per-language Jinja2 templates (en/, es/, fr/, common/)
+├── docker/
+│   ├── Dockerfile                # Web dashboard image
+│   ├── docker-compose.yml        # Web app (expects an external PostgreSQL)
+│   ├── docker-compose.dev.yml    # Dev stack: PostgreSQL 16 + web app, schema auto-applied
+│   ├── entrypoint.sh             # Generates /app/config.toml from env vars on first start
+│   ├── generate_config.py        # The env-var → config.toml generator
+│   ├── .env.example              # All supported environment variables
+│   └── migrate_mysql_to_postgres.py  # One-shot MySQL → PostgreSQL data migration
 ├── install/
-│   ├── setup.py                  # Interactive installer (DB, admin, MQTT, crypto, service)
-│   ├── common_funcs.py
-│   └── storages/dbscheme.sql     # Full MySQL schema
-└── logs/                         # Rotating logs (MqttTransfer.log*)
+│   ├── setup_sqlalchemy.py       # CURRENT interactive installer (PostgreSQL-first)
+│   ├── setup.py                  # LEGACY installer (temod/MySQL — cannot run, kept for reference)
+│   └── storages/
+│       ├── dbscheme_postgresql.sql   # CURRENT full PostgreSQL schema + seed data
+│       └── dbscheme.sql              # LEGACY MySQL schema
+└── logs/                         # Rotating logs (MqttTransfer.log*; git-ignored)
 ```
 
 ---
@@ -108,14 +138,16 @@ MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
 | Concern | Choice |
 | --- | --- |
 | Web framework | Flask 3 (+ `flask_mqtt`, `flask_login`) |
-| ORM / persistence | [`temod`](https://pypi.org/project/temod/) + `temod_flask` (entity/join/cluster holders) |
-| Database | MySQL 8 (`PyMySQL`, `mysql.connector`) |
+| ORM / persistence | SQLAlchemy 2.0 (`core/models.py`) + a generic repository layer (`core/repository.py`, `repos` registry) |
+| Database | PostgreSQL (`psycopg2-binary`); MySQL selectable in the installer but deprecated |
 | Realtime ingestion | `flask-mqtt` (broker subscribe, `on_message` hook) |
-| Background job | Python worker driven by a `systemd` **oneshot** service + **timer** |
-| Crypto | `cryptography` (AES-GCM, ChaCha20-Poly1305, AES-CBC+HMAC) |
+| Background job | Standalone Python worker (`mqtt_transfer_sqlalchemy.py`), continuous loop with a ~10 s sleep |
+| Crypto | `cryptography` (AES-GCM, ChaCha20-Poly1305, AES-CBC+HMAC); `bcrypt` for login passwords |
 | Frontend | Jinja2 + Bootstrap 5 + Bootstrap Icons + fetch API |
 | i18n | `dictionnary.yml` + per-language template folders |
 | Server | `gunicorn` (via `run.sh`) or Flask dev server (`run.py`) |
+| Containers | Docker + docker-compose (`docker/`) |
+| Tests | `pytest` (`services/mqtt_transfer/tests/`) |
 
 > Django is listed in `requirements.txt` but is used **only** for the
 > `url_has_allowed_host_and_scheme` / `iri_to_uri` utilities in `blueprints/auth.py`.
@@ -127,10 +159,10 @@ MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
 1. **Ingest** — `blueprints/mqtt.py` registers `on_connect` (subscribes to `+/+/+`) and
    `on_message`. Each MQTT message is written to `mqtt_message` with
    `client` (first topic segment), `topic`, `payload`, `qos`, `at`, and `processed=False`.
-2. **Poll** — the `mqtt_transfer.timer` fires `mqtt_transfer.service` every ~10 s, which runs
-   `services/mqtt_transfer/mqtt_transfer.py`. A `job` row prevents concurrent runs.
-3. **Resolve sender** — `retrieve_sender()` looks up the `mqtt_topic` (must be `active`), then the
-   `device` and its `client`.
+2. **Poll** — `services/mqtt_transfer/mqtt_transfer_sqlalchemy.py` runs as a standalone
+   long-lived process: every ~10 s it lists all `mqtt_message` rows with `processed=False`.
+3. **Resolve sender** — `retrieve_sender()` looks up the `mqtt_topic` (must be `active`), then
+   the `device` and its `client`.
 4. **Select route** — `select_route()` collects `routing_rule`s matching the client/topic/device,
    evaluates the optional Mongo-style `conditions` DSL (see below), then picks the lowest
    `priority`, breaking ties by newest `created_at`.
@@ -139,32 +171,38 @@ MQTT broker ──► Flask-MQTT ──► mqtt_message (raw)
    IDs** (integer keys) plus an optional `at` timestamp; non-integer keys become `meta_json`.
 6. **Persist** — one `extraction` row is written per message, plus one `parsed_point` per metric
    (typed as `num/str/bool/json` with a `unit` and `quality`).
-7. **Dispatch** — for each `route_deposit` of the rule, the corresponding `client_destination` is
-   loaded, its dispatcher instantiated (keyed by `destination.type`), and the points are sent. A
-   `dispatch` row records the outcome (`queued/sent/failed/…`).
-8. **Ack** — on success the `mqtt_message` row is marked `processed`.
+7. **Ack** — the `mqtt_message` row is marked `processed`. This happens **even when
+   processing fails** (to avoid reprocessing loops); every failure is recorded as an
+   `extraction` row (`success=false`, `error_text`) pointing back to the message.
+8. **Dispatch** — for each `route_deposit` of the rule, the corresponding
+   `client_destination` is loaded, its dispatcher instantiated (keyed by `destination.type`:
+   `mysql`, `postgres`), `password_enc` is decrypted with the crypto envelope, and the points
+   are delivered. A `dispatch` row records each attempt (`queued/sent/failed`). Dispatch
+   failures do **not** unmark the message (points are already persisted); they stay visible
+   in the ledger.
 
 ---
 
 ## Data model
 
-Defined in `core/entity/` and instantiated in `install/storages/dbscheme.sql`.
+Defined as SQLAlchemy models in `core/models.py` and instantiated by
+`install/storages/dbscheme_postgresql.sql` (which also seeds languages, privileges, the default
+crypto config and the `MqttTransfer` job row).
 
 | Domain | Tables |
 | --- | --- |
 | App | `mqtt_relay`, `language`, `job` |
 | Users | `privilege`, `user` (password is **bcrypt**) |
 | Tenants | `client`, `client_destination` |
-| Devices | `device_type`, `device`, `latest_value` |
+| Devices | `device_type`, `device` |
 | MQTT | `mqtt_topic`, `mqtt_broker`, `mqtt_message` |
 | Parsing | `parser`, `extraction`, `metric_catalog`, `parsed_point` |
 | Routing | `routing_rule`, `route_deposit`, `dispatch` |
 | Crypto | `crypto_config`, `crypto_key` |
 
-Joins (`core/join/`) provide the composite views used by the UI and the worker, e.g.
-`RoutingRuleFile` (rule + topic + client + device + parser), `MqttTopicFile`
-(topic + client + device), `DeviceFile` (device + device type) and `UserAccount`
-(user + privilege).
+Data access goes through the generic `Repository` layer: `repos['Client'].get(id=...)`,
+`repos['MqttMessage'].list(processed=False)`, etc. `context.init_context()` also attaches each
+repository as `<Model>.storage` and registers the models as builtins for the blueprints.
 
 ---
 
@@ -200,7 +238,8 @@ def parse(data, **config):
 
 The only supported language today is `python` (`load_parse_function` raises otherwise).
 
-See `db/parsers/lse01_parser_1_0_0.py` for a minimal real example.
+See `db/parsers/lse01_parser_1_0_0.py` for a minimal real example (note: `db/` is git-ignored,
+so this file only exists on machines where it was created through the dashboard).
 
 ---
 
@@ -231,38 +270,67 @@ Supported operators (MongoDB-style): `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`,
 ## Security & Encryption (reversible)
 
 Used **only** for *external* credentials (destination DBs/services) — **never** for user login
-passwords, which remain **bcrypt** (`BCryptedAttribute` on `user.password`).
+passwords, which remain **bcrypt** (`core/auth.py`).
 
 - Algorithms (configured in Settings → System → Secrets & Encryption):
-  - **AES-256-GCM** (recommended)
+  - **AES-256-GCM** (recommended, installer default)
   - **ChaCha20-Poly1305**
   - **AES-256-CBC + HMAC-SHA256** (encrypt-then-MAC, HKDF-derived subkeys)
-- Keys are 32 bytes and live **outside** the DB for `key_source=env`:
+- Key sources: `env` (recommended), `db`, or `kms`. Keys are 32 bytes; for `key_source=env`
+  they live **outside** the DB:
   - `MQTT_RELAY_ENC_KEY_<KEY_ID>` (e.g. `MQTT_RELAY_ENC_KEY_PRIMARY`)
 - Token format: `v1.<algorithm>.<base64 parts…>`
 - Rotation: bump config version, replace the key, then **Re-encrypt** existing rows from the
   Settings page (`crypto_config`, `crypto_key` and the `/crypto*` endpoints).
-- Implementation: `tools/crypto_envelopes.py`, wrapped by the `CryptoConfig` / `CryptoKey`
-  entities in `core/entity/app.py`.
+- Implementation: `tools/crypto_envelopes.py`, wrapped by `core/crypto.py` and the
+  `CryptoConfig` / `CryptoKey` models.
 
 ---
 
 ## Installation
 
+### Option A — Docker (recommended for a quick start)
+
+The dev compose file brings up **PostgreSQL 16 + the dashboard**, applies the schema and seed
+data automatically, and generates `config.toml` inside the container from environment variables:
+
+```bash
+cd docker
+cp .env.example .env         # fill in MQTT broker, secrets, etc.
+docker compose -f docker-compose.dev.yml up -d --build
+# first start only: create your first account on /signup — it gets admin
+```
+
+For a deployment against an **existing** PostgreSQL server, use `docker/docker-compose.yml`
+from the repository root instead:
+
+```bash
+cp docker/.env.example .env  # set DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD
+docker compose --project-directory . -f docker/docker-compose.yml up -d --build
+```
+
+See the comments in both compose files for the optional worker container and host-gateway
+database access. All supported variables are documented in `docker/.env.example`.
+
+### Option B — Bare metal
+
 1. **Prerequisites**
    - Python 3.10+
-   - MySQL 8.0+
+   - PostgreSQL (tested with 16; MySQL is selectable in the installer but deprecated)
    - `venv`
-   - `systemd` (for the background service/timer)
    - Build tooling for native wheels in `requirements.txt`
 
 2. **Create the database**
    ```bash
-   mysql -u root -p
-   CREATE DATABASE mqttrelay CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-   CREATE USER 'mqttrelay'@'localhost' IDENTIFIED BY 'your-strong-password';
-   GRANT ALL PRIVILEGES ON mqttrelay.* TO 'mqttrelay'@'localhost';
-   FLUSH PRIVILEGES;
+   sudo -u postgres psql
+   CREATE DATABASE mqttrelay;
+   CREATE USER mqttrelay WITH PASSWORD 'your-strong-password';
+   GRANT ALL PRIVILEGES ON DATABASE mqttrelay TO mqttrelay;
+   ```
+   Then either let the installer create the tables (next step), or apply the full schema + seed
+   data manually:
+   ```bash
+   psql -U mqttrelay -d mqttrelay -f install/storages/dbscheme_postgresql.sql
    ```
 
 3. **Clone and bootstrap**
@@ -276,36 +344,36 @@ passwords, which remain **bcrypt** (`BCryptedAttribute` on `user.password`).
 
 4. **Run the installer**
    ```bash
-   sudo venv/bin/python install/setup.py
+   venv/bin/python install/setup_sqlalchemy.py
    ```
    The installer prompts for, and then applies:
-   - **MySQL** connection info (it drops/recreates the database — confirm if it already exists),
+   - **PostgreSQL** connection info (creates all tables via SQLAlchemy),
    - an **admin user** (email + password),
-   - the **MQTT broker** (URL, port, credentials, TLS),
-   - the **crypto key source** (`env` recommended) and master key,
-   - the **systemd** unit + timer (installed as `mqtt_transfer.service` / `mqtt_transfer.timer`).
+   - the **crypto key source** (`env`/`kms`/`db`, `env` recommended) and master key,
+   - and writes `config.toml` (from `config.toml.template`) and, for `key_source=env`, a
+     `.env` file containing `MQTT_RELAY_ENC_KEY_PRIMARY`.
 
-   It writes `config.toml` from `config.toml.template`, and (for `key_source=env`) a `.env` file
-   containing `MQTT_RELAY_ENC_KEY_PRIMARY`.
+   > ⚠️ Do **not** use `install/setup.py` — that is the legacy temod/MySQL installer and its
+   > dependencies are no longer installed.
 
-5. **Enable and start the background job**
-   ```bash
-   sudo systemctl enable --now mqtt_transfer.timer
-   systemctl list-timers mqtt_transfer.timer
-   ```
+5. **Run the background worker** — see [Running](#running). The bundled systemd unit files
+   still reference the legacy worker and need editing before use (see Known issues).
 
 ---
 
 ## Configuration
 
-`config.toml` (generated from `config.toml.template`) has four sections:
+`config.toml` (generated from `config.toml.template` by the installer, or from environment
+variables by `docker/generate_config.py`) has these sections:
 
 ```toml
 [app]
+prod = true                    # run.sh: false → Flask dev server, true → gunicorn
 host = "0.0.0.0"
 port = 23909
 threaded = true
 debug = true
+log_level = "INFO"             # Flask app logger level
 ssl = false                    # serve HTTPS directly if true
 ssl_key = "resources/key.pem"
 ssl_cert = "resources/cert.pem"
@@ -313,30 +381,38 @@ ssl_encapsulated = false       # true when behind a reverse proxy
 templates_folder = "front/templates"
 static_folder = "front/static"
 secret_key = ""                # empty → generated at launch
-default_language = "fr"
+default_language = "fr"        # optional; falls back to "en"
 
 [mqtt]
 broker_url = "localhost"
 broker_port = 1883
 username = ""
 password = ""
-keepalive = 0
+keepalive = 60
 tls_enabled = false
 
-[temod]
+[temod]                        # vestigial (pre-migration); kept for compatibility, unused
 bound_database = "mysql"
 core_directory = "core"
 
-[storage.credentials]
+[storage.credentials]          # interpreted as PostgreSQL credentials
 host = "127.0.0.1"
-port = 3306
-database = "mqtt"
+port = 5432
+database = "mqttrelay"
 user = "..."
 password = "..."
 ```
 
+Alternatively, a top-level `database_url = "postgresql://user:pass@host:port/db"` key overrides
+`[storage.credentials]` entirely (see `context.init_context`).
+
+> ⚠️ `config.toml.template` still contains pre-migration defaults (`port = 3306` under
+> `[storage.credentials]`). Since those credentials are now used to build a **PostgreSQL**
+> connection string, make sure the port is your PostgreSQL port (usually 5432) after
+> installation.
+
 > `config.toml` and `.env` contain secrets and must **never** be committed. The installer
-> generates them locally.
+> generates them locally (both are git-ignored).
 
 ---
 
@@ -349,13 +425,37 @@ password = "..."
   ```
   For development you can also run `python run.py` directly (Flask dev server).
 
-- **Background ingest→parse→dispatch** (systemd timer):
+- **Background ingest→parse worker** (current, SQLAlchemy):
   ```bash
-  sudo systemctl enable --now mqtt_transfer.timer
-  journalctl -u mqtt_transfer -f
-  # or one-shot, manually:
-  venv/bin/python services/mqtt_transfer/mqtt_transfer.py --root-dir . --logging-dir logs
+  venv/bin/python services/mqtt_transfer/mqtt_transfer_sqlalchemy.py \
+      --root-dir . --logging-dir logs
   ```
+  This is a **long-running process** (it loops every ~10 s, with a `job`-table lock against
+  double-starts); run it under your process supervisor of choice. The bundled
+  `mqtt_transfer.service` (simple, `Restart=on-failure`) and `mqtt_transfer.sh` launch it;
+  `mqtt_transfer.timer` is obsolete and no longer needed.
+
+---
+
+## Migrating from the MySQL/temod version
+
+If you have data in a pre-migration MySQL instance, `docker/migrate_mysql_to_postgres.py`
+copies it into PostgreSQL. The overall procedure (backup, schema creation, data copy,
+verification) is documented step by step in `POSTGRES_MIGRATION_GUIDE.md`, with current
+progress tracked in `MIGRATION_STATUS.md`.
+
+---
+
+## Tests
+
+```bash
+pytest          # collection is limited to services/mqtt_transfer/tests (see pytest.ini)
+```
+
+> ⚠️ The test suite currently targets the **legacy** worker
+> (`services/mqtt_transfer/mqtt_transfer.py`) and imports `core.entity` / the temod-based
+> dispatchers, so it does not run against the pinned `requirements.txt`. It needs to be ported
+> to `mqtt_transfer_sqlalchemy.py` alongside the dispatch stage.
 
 ---
 
@@ -409,23 +509,49 @@ The dashboard is split across the following pages (all behind login):
 
 ---
 
+## Legacy code (pre-migration)
+
+These modules are kept in the tree for reference and for the MySQL→PostgreSQL data migration,
+but are **not importable** with the pinned `requirements.txt` (they depend on `temod`,
+`mysql.connector` and/or `pymysql`, which are no longer installed):
+
+- `core/entity/`, `core/join/`, `core/constraints.py` — temod entity/join definitions
+- `front/renderers/users.py` — temod-based renderer (only `front/renderers/base.py` is used)
+- `services/mqtt_transfer/mqtt_transfer.py` — the legacy worker (its dispatch stage has been
+  ported to `mqtt_transfer_sqlalchemy.py`)
+- `install/setup.py` + `install/storages/dbscheme.sql` — the legacy installer and MySQL schema
+- `services/mqtt_transfer/README.md` — documents the legacy worker in depth
+
+---
+
 ## Known issues / rough edges
 
+- **Failed messages are acknowledged (no retry).** The worker marks
+  `mqtt_message.processed = true` even when sender resolution, routing or parsing fails, to
+  avoid infinite reprocessing. Every failure is audited as an `extraction` row
+  (`success=false`, `error_text`), but there is no automatic retry; failed dispatches are
+  recorded in the `dispatch` ledger (`status=failed`) and likewise not retried yet.
+- **`mqtt_transfer.timer` is obsolete.** The worker is now a long-running loop guarded by the
+  `job` lock; `mqtt_transfer.service` runs it as a simple service and the timer is no longer
+  needed (enabling it anyway is a harmless no-op while the service is active).
+- **The test suite targets the legacy worker** and cannot run with current dependencies.
+- **Language support is inconsistent.** Templates exist for `en/es/fr` but `dictionnary.yml`
+  only defines `en/fr/ar`: Spanish pages have no dictionary strings and Arabic has no
+  templates. Only **EN** and **FR** are fully functional.
 - `blueprints/destinations.py` and `blueprints/users.py` have **no Jinja templates**
   (`front/templates/<lang>/destinations/` and `front/templates/<lang>/users/` don't exist), so
-  their list/new/view pages still fail with `TemplateNotFound`; only the JSON/redirect routes
-  work. `front/templates/<lang>/topics/view.html` and the `metrics/` templates are also missing.
-- `blueprints/clients.py` (`viewClient`) uses the `DeviceFile` **join** with `.storage`, which
-  may not expose a storage like entities do.
-- `blueprints/dashboards/*.py` contain vestigial raw-SQL code after early returns; the active
-  implementations use Temod storage queries.
-- `config.toml`, `.env` and `logs/` are already excluded by `.gitignore`. Note that `db/` is
-  also ignored, so the parser source files under `db/parsers/` are **not** version-controlled —
-  decide whether that is intended for your workflow.
-- `core/join/` has no `__init__.py`; joins are discovered by Temod's `init_holders` instead.
+  their list/new/view pages fail with `TemplateNotFound`; only the JSON/redirect routes work.
+  `front/templates/<lang>/topics/view.html` and the `metrics/` templates are also missing.
+- `config.toml.template` still carries pre-migration defaults: a vestigial `[temod]` section
+  and `[storage.credentials] port = 3306` even though the credentials now feed a PostgreSQL
+  connection string.
+- `db/` is git-ignored, so the parser source files under `db/parsers/` are **not**
+  version-controlled — decide whether that is intended for your workflow (the Docker setup
+  persists them in a named volume instead).
 
 ---
 
 ## License
 
-MIT. See `LICENSE` file.
+Intended license: MIT. **No `LICENSE` file is currently committed** — one should be added
+before distributing the project.

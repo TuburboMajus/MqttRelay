@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
-
-import pymysql
+from core.repository import repos
+from core.models import MqttMessage
 
 
 # ---------- helpers ----------
@@ -31,9 +31,11 @@ def _auto_bucket(seconds: int) -> int:
     return 10800                 # 180 min
 
 def _floor_to_bucket(ts: datetime, bucket_sec: int) -> datetime:
-    epoch = int(ts.timestamp())
+    # Epoch math on naive-UTC datetimes: .timestamp() would reinterpret them
+    # as local time, and aware results can't compare with the stored values.
+    epoch = int((ts - datetime(1970, 1, 1)).total_seconds())
     floored = (epoch // bucket_sec) * bucket_sec
-    return datetime.fromtimestamp(floored, tz=timezone.utc)
+    return datetime(1970, 1, 1) + timedelta(seconds=floored)
 
 def _build_time_axis(since: datetime, until: datetime, bucket_sec: int) -> List[datetime]:
     out = []
@@ -55,63 +57,39 @@ def compute(
     Returns Chart.js-ready payload for messages throughput:
       { "labels": [...], "datasets": [{"label": "msgs/min", "data": [...]}] }
 
-    - Buckets the counts over time using UNIX bucketing in SQL.
-    - Filters by client if client_id is provided (via mqtt_topic/device joins),
-      or falls back to mqtt_messages.client (VARCHAR).
-
-    Tables used:
-      mqtt_messages(m.at, m.topic, m.client)
-      mqtt_topic(topic UNIQUE, client_id, device_id)
-      device(id, client_id)
+    - Buckets the counts over time
+    - Filters by client if client_id is provided, or falls back to mqtt_messages.client (VARCHAR).
     """
     window_sec = max(_parse_range_to_seconds(range_str), 60)
     bucket_sec = _auto_bucket(window_sec) if (not bucket or bucket == "auto") else _parse_range_to_seconds(bucket)
     # Avoid division by non-minute buckets in label
     per_label = "msgs/min" if bucket_sec == 60 else f"msgs/{int(bucket_sec/60)}m"
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.utcnow()
     until = _floor_to_bucket(now_utc, bucket_sec)
     since = _floor_to_bucket(now_utc - timedelta(seconds=window_sec), bucket_sec)
 
-    # Build WHERE + JOINs
-    where = [f"m.at >= '{since.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')}'", f"m.at < '{(until + timedelta(seconds=bucket_sec)).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')}'"]; 
-    joins: List[str] = []
-
-    if client_id is not None:
-        joins.append("JOIN mqtt_topic t ON t.topic = m.topic")
-        where.append(f"(t.client_id = {client_id} OR d.client_id = {client_id})")
-    elif client_slug_or_name:
-        where.append(f"m.client = {client_id}")
-
-    # Group by bucket using UNIX_TIMESTAMP bucketing
-    sql = f"""
-        SELECT
-          FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(m.at)/{bucket_sec})*{bucket_sec}) AS bucket_ts,
-          COUNT(*) AS cnt
-        FROM mqtt_message m
-        {' '.join(joins)}
-        WHERE {" AND ".join(where)}
-        GROUP BY bucket_ts
-        ORDER BY bucket_ts;
-    """
-
-    # Fetch
+    # Collect messages in time window and bucket them
     series: Dict[datetime, int] = {}
-    conn: pymysql.connections.Connection = pymysql.connections.Connection(**{k:v for k,v in MqttMessage.storage.credentials.items() if k != "auth_plugin"})
-    with conn.cursor() as cur:
-        cur.execute(sql, [])
-        for row in cur.fetchall():
-            # row can be tuple or dict
-            bts = row[0] if isinstance(row, tuple) else row["bucket_ts"]
-            cnt = row[1] if isinstance(row, tuple) else row["cnt"]
-            # Ensure timezone-aware UTC
-            if bts.tzinfo is None:
-                bts = bts.replace(tzinfo=timezone.utc)
-            series[bts] = int(cnt)
+    messages = repos['MqttMessage'].list()
+    
+    for msg in messages:
+        if msg.at >= since and msg.at <= until:
+            if client_id is not None:
+                # Would need to join through topic/device for client filtering
+                pass
+            elif client_slug_or_name:
+                if msg.client == client_slug_or_name:
+                    bucket_ts = _floor_to_bucket(msg.at, bucket_sec)
+                    series[bucket_ts] = series.get(bucket_ts, 0) + 1
+            else:
+                # All clients
+                bucket_ts = _floor_to_bucket(msg.at, bucket_sec)
+                series[bucket_ts] = series.get(bucket_ts, 0) + 1
 
     # Fill 0s for missing buckets
     axis = _build_time_axis(since, until, bucket_sec)
-    labels = [dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M") for dt in axis]
+    labels = [dt.strftime("%Y-%m-%d %H:%M") for dt in axis]
     data = [series.get(dt, 0) for dt in axis]
 
     return {

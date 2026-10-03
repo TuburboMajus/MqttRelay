@@ -34,7 +34,7 @@ htmlCopy code<div class="modal fade" id="editParserCodeModal" tabindex="-1" aria
             {% for m in metrics %}
               <tr id="metric-row-{{ m.id }}">
                 <td>{{ m.id }}</td>
-                <td class="m-key"><code>{{ m.key_name }}</code></td>
+                <td class="m-key"><code>{{ m.name }}</code></td>
                 <td class="m-unit">{{ m.default_unit or '-' }}</td>
               </tr>
             {% endfor %}

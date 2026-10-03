@@ -1,0 +1,79 @@
+# ---------------------------------------------------------------------------
+# MqttRelay — development stack: PostgreSQL + web dashboard.
+#
+# Unlike docker-compose.yml (which expects an external PostgreSQL), this file
+# spins up a PostgreSQL 16 container, applies the schema+seed data
+# (install/storages/dbscheme_postgresql.sql) on first start, then points the
+# web app at it.
+#
+# Usage (from the docker/ directory):
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# Reset everything, including the database:
+#   docker compose -f docker-compose.dev.yml down -v
+#
+# The database is initialized only on the FIRST start (empty volume). After it
+# is up, create your first account on the /signup page — it gets `admin`.
+#
+# Optional overrides (via ./docker/.env): POSTGRES_DATABASE, POSTGRES_USER,
+# POSTGRES_PASSWORD, POSTGRES_PORT.
+# ---------------------------------------------------------------------------
+
+# Explicit project name: without it compose uses the directory name ("docker"),
+# which collides with any other project whose compose file lives in a docker/
+# folder — their `docker compose down` would destroy THIS stack.
+name: mqttrelay-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:-mqttrelay}
+      POSTGRES_USER: ${POSTGRES_USER:-mqttrelay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mqttrelay}
+    volumes:
+      # Schema + seed applied automatically by the official entrypoint on first start.
+      - ../install/storages/dbscheme_postgresql.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - mqttrelay_postgres_data:/var/lib/postgresql/data
+    ports:
+      # Exposed for local tooling; remove if a host PostgreSQL is already on 5432.
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mqttrelay} -d ${POSTGRES_DATABASE:-mqttrelay}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: mqttrelay:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${MQTTRELAY_PORT:-23909}:${APP_PORT:-23909}"
+    env_file:
+      - .env
+    environment:
+      # Point the generated config.toml at the PostgreSQL service on this network.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DATABASE:-mqttrelay}
+      DB_USER: ${POSTGRES_USER:-mqttrelay}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-mqttrelay}
+    volumes:
+      # Parser source files written by the dashboard (persist across restarts).
+      - parser_storage:/app/db
+
+volumes:
+  # Pinned names: these volumes were first created under the old default
+  # project name ("docker"); pinning keeps the existing data after the rename.
+  mqttrelay_postgres_data:
+    name: docker_mqttrelay_postgres_data
+  parser_storage:
+    name: docker_parser_storage

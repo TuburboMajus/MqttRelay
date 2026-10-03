@@ -4,6 +4,7 @@ host = "0.0.0.0"
 port = 23909
 threaded = true
 debug = true
+log_level = "INFO"
 ssl = false
 ssl_key = "resources/key.pem"
 ssl_cert = "resources/cert.pem"
@@ -17,7 +18,7 @@ broker_url = "localhost"
 broker_port = 1883
 username = ""
 password = ""
-keepalive = 0
+keepalive = 60
 tls_enabled = false
 
 [temod]

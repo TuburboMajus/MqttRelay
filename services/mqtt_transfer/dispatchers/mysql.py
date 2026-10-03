@@ -3,7 +3,6 @@ from pymysql.cursors import Cursor
 from datetime import datetime
 
 import pymysql
-import base64
 import json
 
 
@@ -21,13 +20,12 @@ class MysqlDispatcher(object):
               default maps the canonical parsed_points fields 1:1:
                 {
                   "device_id":"device_id", "key_name":"key_name", "ts":"ts",
-                  "num_value":"num_value", "str_value":"str_value",
-                  "bool_value":"bool_value", "json_value":"json_value",
-                  "unit":"unit", "quality":"quality", "meta_json":"meta_json"
+                  "value":"value", "unit":"unit",
+                  "quality":"quality", "meta_json":"meta_json"
                 }
           conflict_keys: list[str] = source keys that form the target UNIQUE key
                 default ["device_id","key_name","ts"]
-          on_conflict: "ignore" | "update" | "error"  (default "ignore")
+          on_conflict: "ignore" | "update" | "error"  (default "update")
           batch_size: int (default 1000)
     """
     def __init__(self, host="127.0.0.1",port=3306, database_name=None, username=None, password=None, password_enc=None, **kwargs):
@@ -39,22 +37,6 @@ class MysqlDispatcher(object):
         self.password = password
         self.password_enc = password_enc
         self.opts = kwargs
-
-    def _decode_secret(x: Any) -> Optional[str]:
-        """
-        Replace this with your KMS/valut decrypt. Here we accept either a plain string
-        or bytes (as stored in password_enc) and decode utf-8.
-        """
-        if x is None:
-            return None
-        if isinstance(x, (bytes, bytearray)):
-            try:
-                return base64.b64decode(x).decode("utf-8")
-            except Exception:
-                return None
-        if isinstance(x, str):
-            return base64.b64decode(x.encode('utf-8')).decode("utf-8")
-        return None
 
     def _iso_to_mysql_dt(x: Any) -> Any:
         """Convert ISO-8601 strings to datetime; pass through others."""
@@ -110,7 +92,17 @@ class MysqlDispatcher(object):
         port = int(self.port or 3306)
         user = self.username
         dbname = self.database_name
-        password = (self.password or MysqlDispatcher._decode_secret(self.password_enc))
+        password = self.password
+
+        if password is None and self.password_enc is not None:
+            # password_enc holds a crypto-envelope token (v1.<alg>....) that
+            # only the worker can decrypt (it has the master key); it must pass
+            # the plaintext as `password`.
+            return {
+                "status": "failed",
+                "http_status": None,
+                "response_snippet": "Encrypted password provided without decryption; caller must decrypt password_enc.",
+            }
 
         if not (user and dbname):
             return {
@@ -197,14 +189,12 @@ class MysqlDispatcher(object):
             return {"status": "failed", "http_status": None, "response_snippet": f"Connect error: {e}"}
 
         try:
-            with conn:
-                with conn.cursor() as cur:  # type: Cursor
+            with conn.cursor() as cur:  # type: Cursor
                     sql = insert_sql + update_clause
                     # Prepare batches
                     for i in range(0, len(parsed_points), batch_size):
                         batch = parsed_points[i : i + batch_size]
                         values = [_row_from_point(p) for p in batch]
-                        print(values)
                         cur.executemany(sql, values)
                         conn.commit()
 
@@ -239,6 +229,11 @@ class MysqlDispatcher(object):
                     f"inserted≈{inserted}; updated≈{updated}; ignored≈{ignored}; mode={on_conflict}"
                 ),
             }
-        except Exception as e:
-            conn.rollback()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             raise
+        finally:
+            conn.close()

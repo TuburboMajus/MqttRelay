@@ -1,13 +1,13 @@
-from flask import current_app, render_template, request, redirect, url_for, abort, session,g
-from flask_login import LoginManager, login_required, current_user
+from flask import current_app, render_template, request, redirect, url_for, abort, session, g, Blueprint
+from flask_login import login_required, current_user, login_user, logout_user
 
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.encoding import iri_to_uri
 
-from temod_flask.utils.content_readers import body_content
-from temod_flask.blueprint import MultiLanguageBlueprint
-
 from front.renderers.base import BaseTemplate
+from core.repository import repos
+from core.auth import authenticate_user, hash_password, SQLAlchemyUserProxy
+from core.models import User, Privilege
 
 from datetime import datetime, date
 from pathlib import Path
@@ -15,113 +15,131 @@ from pathlib import Path
 import traceback
 
 
-auth_blueprint = MultiLanguageBlueprint('auth',__name__, load_in_g=True, default_config={
-	"templates_folder":"{language}/auth",
-	"authenticator":LoginManager,
-}, dictionnary_selector=lambda lg:lg['code'])
+auth_blueprint = Blueprint('auth', __name__)
 
 
-# ** EndSection ** Routes
-@auth_blueprint.route('/login',methods=['GET'])
-@auth_blueprint.with_language
+def setup(config=None):
+	"""Setup blueprint with configuration."""
+	return auth_blueprint
+
+
+# ** Section ** Routes
+@auth_blueprint.route('/login', methods=['GET'])
 def login():
-	if not current_user.is_anonymous:
-		auth_blueprint.get_configuration('authenticator').logout_user(current_user)
-		
-	return BaseTemplate(
-		Path(auth_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("login.html"), 
-		languages=current_app.config['LANGUAGES'].values(),
-	).handles_error().with_language().render()
-
-
-@auth_blueprint.route('/login',methods=['POST'])
-@body_content("form")
-@auth_blueprint.with_dictionnary
-def dologin(form):
+	current_app.logger.debug("Route [auth.login] serving login page")
+	if current_user and not current_user.is_anonymous:
+		logout_user()
 	
+	# Get language from session or query param
+	language_code = session.get('lg', g.get('language', {}).get('code', 'en'))
+	
+	return render_template(
+		f'{language_code}/auth/login.html',
+		languages=current_app.config['LANGUAGES'].values(),
+	)
+
+
+@auth_blueprint.route('/login', methods=['POST'])
+def dologin():
+	current_app.logger.debug("Route [auth.dologin] login attempt for email=%s", request.form.get('email'))
+
 	try:
-		form.update({"email":form['email'].strip()})
+		email = request.form.get('email', '').strip()
+		password = request.form.get('password', '')
 	except:
+		current_app.logger.warning("Route [auth.dologin] malformed login form")
 		return redirect(url_for("auth.login"))
 
-	authenticator = auth_blueprint.get_configuration('authenticator')
-	user = authenticator.search_user(form["email"])
+	# Authenticate user
+	user = authenticate_user(email, password)
 
-	dictionnary = current_app.config['DICTIONNARY'][user['language']]
-	if user is not None and user['user'].attributes['password'] == form.get('password'):
-		if user['is_disabled']:
-			error = dictionnary['login']["account_deactivated"]
+	if user is not None:
+		if not user.is_active:
+			current_app.logger.warning("Route [auth.dologin] login rejected: account deactivated (email=%s)", email)
+			error = "account_deactivated"
 		else:
-			authenticator.login_user(user, remember=form.get("remember")=="on")
+			current_app.logger.info("Route [auth.dologin] user authenticated (email=%s)", email)
+			login_user(user, remember=request.form.get("remember") == "on")
 			next_ = request.args.get('next')
 			if next_ is not None:
 				if not url_has_allowed_host_and_scheme(next_, request.host):
+					current_app.logger.warning("Route [auth.dologin] open redirect blocked (next=%s)", next_)
 					return abort(400)
 				else:
 					next_ = iri_to_uri(next_)
-			session['lg'] = user['language']
+			session['lg'] = user._user.language
 			return redirect(next_ or "/")
 	else:
-		error = dictionnary['login']["wrong_identifiers"]
+		current_app.logger.warning("Route [auth.dologin] login failed: wrong credentials (email=%s)", email)
+		error = "wrong_identifiers"
 
-	return redirect(url_for("auth.login",error=error))
-
-
-
+	return redirect(url_for("auth.login", error=error))
 
 
-@auth_blueprint.route('/signup',methods=['GET'])
-@auth_blueprint.with_language
+@auth_blueprint.route('/signup', methods=['GET'])
 def signup():
-	if not current_user.is_anonymous:
-		auth_blueprint.get_configuration('authenticator').logout_user(current_user)
+	current_app.logger.debug("Route [auth.signup] serving signup page")
+	if current_user and not current_user.is_anonymous:
+		logout_user()
 
-	return BaseTemplate( 
-		Path(auth_blueprint.configuration["templates_folder"].format(language=g.language['code'])).joinpath("signup.html"), 
+	language_code = session.get('lg', g.get('language', {}).get('code', 'en'))
+
+	return render_template(
+		f'{language_code}/auth/signup.html',
 		languages=current_app.config['LANGUAGES'].values()
-	).handles_error().with_language().render()
-		
+	)
 
-@auth_blueprint.route('/signup',methods=['POST'])
-@body_content("form")
-@auth_blueprint.with_dictionnary
-def doSignup(form):
+
+@auth_blueprint.route('/signup', methods=['POST'])
+def doSignup():
+	current_app.logger.debug("Route [auth.doSignup] signup attempt for email=%s", request.form.get('email'))
 
 	try:
+		email = request.form.get('email', '').strip()
+		name = request.form.get('name', '').strip()
+		password = request.form.get('password', '')
+		cpassword = request.form.get('cpassword', '')
 
-		form.update({"email":form['email'].strip(),"username":form['name'].strip()})
-		user = User.storage.get(email=form['email'])
+		# Check if user already exists
+		existing_user = repos['User'].get(email=email)
 
-		if user is None:
-
-			password = form.get('password')
-			cpassword = form.get('cpassword')
+		if existing_user is None:
 			if password == cpassword:
-				user = User(
-					id=User.storage.generate_value('id'),
-					privilege=Privilege.storage.get(label="admin")['id'],
-					email=form['email'],
-					language=g.language['code']
+				# Create new user
+				admin_privilege = repos['Privilege'].get(label="admin")
+				new_user = User(
+					id=None,  # Auto-generated
+					privilege_id=admin_privilege.id if admin_privilege else None,
+					email=email,
+					password=hash_password(password),
+					is_authenticated=False,
+					is_active=True,
+					is_disabled=False,
+					language=session.get('lg', 'en'),
+					track=False
 				)
-				user['password'] = password
-				User.storage.create(user)
+				repos['User'].create(new_user)
+				current_app.logger.info("Route [auth.doSignup] user account created (email=%s)", email)
 				return redirect(url_for('auth.login'))
 
-			error = g.dictionnary['signup']['unmatched_passwords']
+			error = "unmatched_passwords"
 
-		elif user is not None:
-			error = g.dictionnary['signup']['email_already_used']
+		else:
+			current_app.logger.warning("Route [auth.doSignup] email already in use (email=%s)", email)
+			error = "email_already_used"
 
-	except:
+	except Exception as e:
 		traceback.print_exc()
-		error = g.dictionnary['signup']['email_error']
+		current_app.logger.exception("Route [auth.doSignup] unexpected error during signup")
+		error = "email_error"
 
-	return redirect(url_for('auth.signup',error=error))
-	
+	return redirect(url_for('auth.signup', error=error))
 
-@auth_blueprint.route('/logout',methods=['GET',"POST"])
+
+@auth_blueprint.route('/logout', methods=['GET', 'POST'])
 @login_required
 def logout():
-	auth_blueprint.get_configuration('authenticator').logout_user(current_user)
+	current_app.logger.info("Route [auth.logout] logging out user (id=%s)", current_user.id if current_user else None)
+	logout_user()
 	return redirect(url_for('auth.login'))
 # ** EndSection ** Routes
