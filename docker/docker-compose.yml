@@ -11,6 +11,10 @@
 # `.env` for variable interpolation (ports, etc.).
 # ---------------------------------------------------------------------------
 
+# Explicit project name: without it compose uses the directory name, which
+# collides with any other project whose compose file lives in a docker/ folder.
+name: mqttrelay
+
 services:
   web:
     build:
@@ -29,30 +33,28 @@ services:
     volumes:
       # Parser source files written by the dashboard (persist across restarts).
       - parser_storage:/app/db
-    # If PostgreSQL lives on the Docker host, set DB_HOST=host.docker.internal in
-    # `.env` and uncomment the host-gateway mapping:
-    # extra_hosts:
-    #   - "host.docker.internal:host-gateway"
+    # Lets containers reach a PostgreSQL running on the Docker host: set
+    # DB_HOST=host.docker.internal in `.env`. Harmless when unused.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # -------------------------------------------------------------------------
-  # Optional: the ingest -> parse -> dispatch worker. It is normally driven by
-  # systemd as a one-shot job; run it manually or schedule it externally:
-  #
-  #   docker compose --project-directory . -f docker/docker-compose.yml run --rm mqtt_transfer
-  #
-  # mqtt_transfer:
-  #   build:
-  #     context: ..
-  #     dockerfile: docker/Dockerfile
-  #   image: mqttrelay:latest
-  #   restart: "no"
-  #   env_file:
-  #     - .env
-  #   volumes:
-  #     - parser_storage:/app/db
-  #     - ../logs:/app/logs
-  #   command: ["python", "services/mqtt_transfer/mqtt_transfer.py", "--root-dir", "/app", "--logging-dir", "/app/logs"]
-  # -------------------------------------------------------------------------
+  # The ingest -> parse -> dispatch worker: a long-running loop (one cycle every
+  # ~10s) guarded by the `job` DB lock, so it runs as a normal service.
+  mqtt_transfer:
+    image: mqttrelay:latest
+    container_name: mqttrelay-worker
+    restart: unless-stopped
+    depends_on:
+      - web
+    env_file:
+      - .env
+    volumes:
+      # Shared with `web`: the worker imports parser code written by the dashboard.
+      - parser_storage:/app/db
+      - worker_logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "services/mqtt_transfer/mqtt_transfer_sqlalchemy.py", "--root-dir", "/app", "--logging-dir", "/app/logs"]
 
   # -------------------------------------------------------------------------
   # Optional: local PostgreSQL for development. If enabled, set DB_HOST=postgres
@@ -74,4 +76,5 @@ services:
 
 volumes:
   parser_storage:
+  worker_logs:
   # mqttrelay_postgres_data:
