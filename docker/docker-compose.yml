@@ -2,7 +2,7 @@
 # MqttRelay — local deployment of the Flask dashboard (and optional worker/DB).
 #
 # Run from the repository root:
-#   cp .env.example .env        # fill in DB / MQTT credentials
+#   cp docker/.env.example .env # fill in DB / MQTT credentials
 #   docker compose --project-directory . -f docker/docker-compose.yml up -d --build
 #
 # The container generates /app/config.toml from the `.env` variables on first
@@ -18,7 +18,8 @@ name: mqttrelay
 services:
   web:
     build:
-      context: ..
+      # Resolved against the project directory (repo root via --project-directory .)
+      context: .
       dockerfile: docker/Dockerfile
     image: mqttrelay:latest
     container_name: mqttrelay-web
@@ -41,6 +42,11 @@ services:
   # The ingest -> parse -> dispatch worker: a long-running loop (one cycle every
   # ~10s) guarded by the `job` DB lock, so it runs as a normal service.
   mqtt_transfer:
+    build:
+      # Same image as `web`; compose dedupes the build. Without a build section
+      # compose would try to PULL mqttrelay:latest from a registry and fail.
+      context: .
+      dockerfile: docker/Dockerfile
     image: mqttrelay:latest
     container_name: mqttrelay-worker
     restart: unless-stopped
