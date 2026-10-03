@@ -80,6 +80,14 @@ class MysqlDispatcher(object):
         on_conflict = self.opts.get("on_conflict", "update")  # ignore|update|error
         batch_size = int(self.opts.get("batch_size", 1000))
 
+        # Optional translation tables for schemas that key by their own ids:
+        #   metric_map: { "<mqtt_metric_id>": "<dest_metric_id>" }         (source key "metric_id")
+        #   point_map:  { "<device_id>:<metric_id>": "<dest_point_id>" }   (source key "point_id")
+        # A point whose metric/point has no mapping is SKIPPED (not inserted),
+        # which keeps foreign-key integrity on the destination.
+        metric_map: Dict[str, str] = self.opts.get("metric_map") or {}
+        point_map: Dict[str, str] = self.opts.get("point_map") or {}
+
         # Derive ordered destination columns from the mapping (stable order)
         src_keys = list(column_map.keys())
         dest_cols = [column_map[k] for k in src_keys]
@@ -150,7 +158,8 @@ class MysqlDispatcher(object):
         updated = 0
         ignored = 0
 
-        def _row_from_point(p: Dict[str, Any]) -> List[Any]:
+        def _row_from_point(p: Dict[str, Any]) -> Optional[List[Any]]:
+            """Build one destination row, or None to skip (no id mapping)."""
             row: List[Any] = []
             meta = json.loads(p.get("meta_json","{}"))
             for key in src_keys:
@@ -164,10 +173,22 @@ class MysqlDispatcher(object):
                     elif len(non_null_value) > 1:
                         raise Exception(f"Some parsed point has multiple values {p}")
                     val = non_null_value[0]
+                elif key == "point_id":
+                    # Resolve dest point from (device_id, metric_id); skip if unmapped.
+                    mapped = point_map.get(f"{p.get('device_id')}:{p.get('metric_id')}")
+                    if mapped is None:
+                        return None
+                    val = mapped
+                elif key == "metric_id":
+                    if metric_map:
+                        mapped = metric_map.get(str(val))
+                        if mapped is None:
+                            return None
+                        val = mapped
+                    else:
+                        val = meta.get('metrics',{}).get(str(val), val)
                 elif key == "device_id":
                     val = meta.get('devices',{}).get(str(val), val)
-                elif key == "metric_id":
-                    val = meta.get('metrics',{}).get(str(val), val)
                 elif key in ("json_value", "meta_json") and val is not None and not isinstance(val, (str, bytes)):
                     # Ensure JSON/text columns get serialized JSON
                     val = json.dumps(val, ensure_ascii=False)
@@ -194,7 +215,9 @@ class MysqlDispatcher(object):
                     # Prepare batches
                     for i in range(0, len(parsed_points), batch_size):
                         batch = parsed_points[i : i + batch_size]
-                        values = [_row_from_point(p) for p in batch]
+                        values = [r for r in (_row_from_point(p) for p in batch) if r is not None]
+                        if not values:
+                            continue
                         cur.executemany(sql, values)
                         conn.commit()
 
@@ -202,22 +225,22 @@ class MysqlDispatcher(object):
                         # - INSERT IGNORE: rowcount ≈ inserted (ignores are 0)
                         # - ON DUPLICATE KEY UPDATE: affected rows counts inserts as 1, updates as 2 (or 0 if no-op)
                         rc = cur.rowcount if cur.rowcount is not None else 0
-                        total_rows += len(batch)
+                        total_rows += len(values)
 
                         if on_conflict == "ignore":
                             inserted += rc
-                            ignored += len(batch) - rc
+                            ignored += len(values) - rc
                         elif on_conflict == "update":
                             # Best effort split: assume up to rc//2 were updates and the rest inserts.
                             # (MySQL returns 2 per update row, 1 per insert, 0 per no-op)
                             # We estimate by preferring updates, then inserts.
-                            upd_est = min(len(batch), rc // 2)
+                            upd_est = min(len(values), rc // 2)
                             rem = rc - 2 * upd_est
                             ins_est = max(0, rem)
                             updated += upd_est
                             inserted += ins_est
                             # no-op updates counted as 0 -> treat as ignored
-                            ignored += len(batch) - (upd_est + ins_est)
+                            ignored += len(values) - (upd_est + ins_est)
                         else:
                             inserted += rc  # "error" mode -> duplicates would have raised already
 
