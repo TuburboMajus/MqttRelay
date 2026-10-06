@@ -210,3 +210,13 @@ config.toml
 db/
 logs/
 backups/
+# --- agentkit (agentic pipeline) ---
+local/.secrets/*
+!local/.secrets/.gitkeep
+.milkyflow/scripts/docs_mapping.json.[1-5]
+.milkyflow/scripts/next_prompt.override.state
+local/qa-artifacts/
+.milkyflow/scripts/orchestrator/.state/*
+!.milkyflow/scripts/orchestrator/.state/.gitkeep
+__pycache__/
+*.pyc
