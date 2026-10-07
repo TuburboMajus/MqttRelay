@@ -220,3 +220,6 @@ local/qa-artifacts/
 !.milkyflow/scripts/orchestrator/.state/.gitkeep
 __pycache__/
 *.pyc
+
+# MilkyFlow kit — machine-local, never committed
+.milkyflow/
