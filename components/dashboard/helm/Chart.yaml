@@ -1,0 +1,10 @@
+apiVersion: v2
+name: mqttrelay-dashboard
+description: >
+  MqttRelay dashboard component — Flask web UI/API + MQTT ingestion.
+  Intentionally minimal (see ARCHITECTURE.md section 8): a working Deployment + Service,
+  not yet the hardened chart (probes, securityContext, NetworkPolicies) the Platform
+  Engineer Agent derives from docker/ at epic close.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
