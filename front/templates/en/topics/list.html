@@ -81,7 +81,7 @@
 {% block scripts %}
 <script>
   // ---- Helpers ----
-  const csrfToken = {% if csrf_token %}"{{ csrf_token() }}"{% else %}null{% endif %};
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || null;
 
   async function apiUpdateActive(topicId, active) {
     const url = `/topic/${encodeURIComponent(topicId)}`;

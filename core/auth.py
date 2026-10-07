@@ -1,8 +1,10 @@
 # Authentication helpers for SQLAlchemy-based user management
-from flask_login import UserMixin
+from flask_login import UserMixin, current_user
+from flask import abort
 from core.models import User as UserModel
 from core.repository import repos
 import bcrypt
+import functools
 from typing import Optional
 
 
@@ -38,12 +40,44 @@ class SQLAlchemyUserProxy(UserMixin):
     @property
     def privilege_id(self):
         return self._user.privilege_id
-    
+
+    @property
+    def roles(self):
+        """Roles granted to this user, read through the linked Privilege row.
+
+        Privilege.roles is stored as a single semicolon-delimited String(256)
+        column (no relational roles table), so split on ';' here. The
+        underlying User row is detached from its session by the time this is
+        read (repos close their session after each call), so the privilege is
+        looked up explicitly rather than through the (now unusable) lazy
+        relationship.
+        """
+        if not self._user.privilege_id:
+            return set()
+        privilege = repos['Privilege'].get(id=self._user.privilege_id)
+        if not privilege or not privilege.roles:
+            return set()
+        return {role.strip() for role in privilege.roles.split(';') if role.strip()}
+
     def get_id(self):
         return str(self._user.id)
     
     def __repr__(self):
         return f"<User {self.email}>"
+
+
+MIN_PASSWORD_LENGTH = 8
+
+
+def validate_password(pwd: str) -> Optional[str]:
+    """Validate a candidate password's length.
+
+    Returns 'password_too_short' when pwd is falsy or shorter than
+    MIN_PASSWORD_LENGTH, else None.
+    """
+    if not pwd or len(pwd) < MIN_PASSWORD_LENGTH:
+        return 'password_too_short'
+    return None
 
 
 def hash_password(password: str) -> bytes:
@@ -68,3 +102,20 @@ def get_user_by_id(user_id: str) -> Optional[SQLAlchemyUserProxy]:
     """Get a user by ID."""
     user = repos['User'].get(id=user_id)
     return SQLAlchemyUserProxy(user) if user else None
+
+
+def roles_required(*roles):
+    """Route decorator that aborts with HTTP 403 unless the current user's
+    roles intersect the given required role set.
+    """
+    required_roles = set(roles)
+
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapped(*args, **kwargs):
+            user_roles = getattr(current_user, 'roles', set())
+            if not (user_roles & required_roles):
+                return abort(403)
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator

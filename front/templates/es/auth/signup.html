@@ -1,95 +1,113 @@
-<div class="modal fade" id="editParserCodeModal" tabindex="-1" aria-labelledby="editParserLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl">
-    <form class="modal-content" id="editParserCodeForm">
-      <div class="modal-header">
-        <h5 class="modal-title" id="editParserLabel">Edit Parser Code</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-
-      <div class="modal-body">
-        {% if csrf_token is defined %}
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Registrarse - MqttRelay</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body, html {
+            height: 100%;
+            background: #1e1e2f;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .signup-container {
+            background: #2a2a40;
+            padding: 2rem 3rem;
+            border-radius: 0.5rem;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+        }
+        .form-control {
+            background: #3a3f58;
+            border: none;
+            color: #fff;
+        }
+        .form-control:focus {
+            background: #4a4f68;
+            color: #fff;
+            box-shadow: none;
+            border-color: #0d6efd;
+        }
+        a {
+            color: #0d6efd;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="signup-container">
+        <h2 class="mb-4 text-center">Crear una Cuenta</h2>
+        {% if error %}
+            <div class="alert alert-danger" role="alert">{{ dictionnary[language.code]['signup'].get(error, error) }}</div>
         {% endif %}
-
-        <div class="row g-3">
-          <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-              <label for="e_code" class="form-label mb-0">Source Code</label>
-              <span class="small text-muted" id="codeLangHint"></span>
-            </div>
-
-            <!-- Hidden textarea is the form field; CodeMirror will mount over it -->
-            <textarea id="e_code" name="code" class="form-control font-monospace" rows="12"
-                      placeholder="// Write your parser here...">{{ code or '' }}</textarea>
-
-            <!-- text tweak -->
-            <div class="form-text">
-              The parser must expose a function/class that returns a <em>dictionary</em> mapping metric IDs to values.
-              See the metric catalog below for available IDs and keys.
-            </div>
-          </div>
-
-          <!-- WRAP TABLE IN A COLUMN -->
-          <div class="col-12">
-            <table class="table table-hover align-middle" id="metricsTable">
-              <caption class="text-muted">Metric catalog reference</caption>
-              <thead class="table-dark">
-                <tr>
-                  <th style="width: 90px;">ID</th>
-                  <th>Key</th>
-                  <th>Unit</th>
-                </tr>
-              </thead>
-              <tbody>
-              {% for m in metrics %}
-                <tr id="metric-row-{{ m.id }}">
-                  <td>{{ m.id }}</td>
-                  <td class="m-key"><code>{{ m.key_name }}</code></td>
-                  <td class="m-unit">{{ m.default_unit or '-' }}</td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="col-12 mt-2">
-            <div class="d-flex flex-wrap gap-2 align-items-end">
-              <div class="flex-grow-1">
-                <label for="deviceSelect" class="form-label mb-1">Device</label>
-                <select id="deviceSelect" class="form-select">
-                  <option value="">— Select a device —</option>
-                </select>
-              </div>
-              <div class="d-flex align-items-end">
-                <button type="button" id="btnFetchExample" class="btn btn-outline-primary">
-                  <i class="bi bi-cloud-download"></i> fetch example data packet
-                </button>
-              </div>
-            </div>
-
-            <div class="d-flex justify-content-between align-items-center mt-3">
-              <strong class="mb-0">Example Packet</strong>
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="copyExampleBtn" aria-label="Copy example packet">
-                <i class="bi bi-clipboard"></i> Copy
-              </button>
-            </div>
-
-            <!-- aria-live for SRs when content changes -->
-            <pre id="examplePacket"
-                 class="bg-light p-3 rounded small"
-                 style="max-height: 300px; overflow:auto; white-space: pre;"
-                 aria-live="polite">—</pre>
-          </div>
+        {% if signup_disabled %}
+        <div class="alert alert-info" role="alert">
+            {{ dictionnary[language.code]['signup']['signup_disabled'] }}
         </div>
-      </div>
-
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button id="saveEditCodeBtn" type="submit" class="btn btn-primary">
-          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-          Save changes
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
+        {% else %}
+        <form method="POST" action="{{ url_for('auth.signup') }}">
+            {% if csrf_token is defined %}
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% endif %}
+            <div class="mb-3">
+                <label for="name" class="form-label">Nombre completo</label>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="name"
+                    name="name"
+                    placeholder="Tu nombre completo"
+                    required
+                    autofocus
+                />
+            </div>
+            <div class="mb-3">
+                <label for="email" class="form-label">Correo electrónico</label>
+                <input
+                    type="email"
+                    class="form-control"
+                    id="email"
+                    name="email"
+                    placeholder="tu@ejemplo.com"
+                    required
+                />
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Contraseña</label>
+                <input
+                    type="password"
+                    class="form-control"
+                    id="password"
+                    name="password"
+                    placeholder="Crea una contraseña"
+                    required
+                />
+            </div>
+            <div class="mb-3">
+                <label for="password_confirm" class="form-label">Confirmar contraseña</label>
+                <input
+                    type="password"
+                    class="form-control"
+                    id="password_confirm"
+                    name="cpassword"
+                    placeholder="Confirma tu contraseña"
+                    required
+                />
+            </div>
+        <button type="submit" class="btn btn-primary w-100">Registrarse</button>
+        </form>
+        {% endif %}
+        <p class="mt-3 text-center">
+            ¿Ya tienes una cuenta? <a href="{{ url_for('auth.login') }}">Iniciar Sesión</a>
+        </p>
+    </div>
+</body>
+</html>

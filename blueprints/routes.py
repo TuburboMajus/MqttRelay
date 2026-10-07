@@ -4,6 +4,8 @@ from flask_login import login_required, current_user
 from core.repository import repos
 from core.pagination import paginate
 from core.models import RoutingRule, RouteDeposit, Parser
+from core.validation import parse_int_bounded, clean_json_field
+from core.auth import roles_required
 
 from datetime import datetime, date
 import logging
@@ -55,19 +57,27 @@ def createRoutingRule():
     destination_ids = request.form.getlist('destination_ids[]') if request.form else data.get('destination_ids', [])
     
     # Handle empty fields
-    for field in ['device_id', 'conditions']:
+    for field in ['device_id']:
         if data.get(field, '').strip() == '':
             data[field] = None
+    
+    try:
+        priority = parse_int_bounded(data.get('priority'), 'priority', 0, 100000, default=100)
+        parser_config = clean_json_field(data.get('parser_config'), 'parser_config')
+        conditions = clean_json_field(data.get('conditions'), 'conditions')
+    except ValueError as e:
+        current_app.logger.warning("Route [routes.createRoutingRule] validation error: %s", e)
+        return jsonify({"status": "error", "error": str(e)}), 400
     
     routingrule = RoutingRule(
         client_id=data.get('client_id'),
         topic_id=data.get('topic_id'),
         device_id=data.get('device_id'),
         parser_id=data.get('parser_id'),
-        parser_config=data.get('parser_config'),
+        parser_config=parser_config,
         active=data.get('active', 'on').lower() in ['on', '1', 'true'] if isinstance(data.get('active', 'on'), str) else bool(data.get('active')),
-        priority=int(data.get('priority', 0)),
-        conditions=data.get('conditions'),
+        priority=priority,
+        conditions=conditions,
         created_at=datetime.utcnow()
     )
     repos['RoutingRule'].create(routingrule)
@@ -127,9 +137,17 @@ def editRoutingRule(routingrule_id):
     if 'active' in update_dict:
         update_dict['active'] = update_dict['active'].lower() in ['true', '1', 'on'] if isinstance(update_dict['active'], str) else bool(update_dict['active'])
     
-    # Handle priority as integer
-    if 'priority' in update_dict:
-        update_dict['priority'] = int(update_dict['priority'])
+    try:
+        # Handle priority as integer
+        if 'priority' in update_dict:
+            update_dict['priority'] = parse_int_bounded(update_dict['priority'], 'priority', 0, 100000, default=100)
+        if 'parser_config' in update_dict:
+            update_dict['parser_config'] = clean_json_field(update_dict['parser_config'], 'parser_config')
+        if 'conditions' in update_dict:
+            update_dict['conditions'] = clean_json_field(update_dict['conditions'], 'conditions')
+    except ValueError as e:
+        current_app.logger.warning("Route [routes.editRoutingRule] validation error: %s", e)
+        return jsonify({"status": "error", "error": str(e)}), 400
     
     repos['RoutingRule'].update(routingrule, **update_dict)
 
@@ -152,6 +170,7 @@ def editRoutingRule(routingrule_id):
 
 @bp.route('/route/<string:routingrule_id>', methods=["DELETE"])
 @login_required
+@roles_required('admin')
 def deleteRoutingRule(routingrule_id):
     current_app.logger.debug("Route [routes.deleteRoutingRule] called (routingrule_id=%s)", routingrule_id)
     routingrule = repos['RoutingRule'].get(id=routingrule_id)

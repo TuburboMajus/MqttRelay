@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from core.repository import repos
 from core.pagination import paginate
 from core.models import MqttTopic, Device, MqttMessage
+from core.validation import parse_int_bounded
 
 from datetime import datetime, date
 import logging
@@ -68,10 +69,17 @@ def newTopic():
 def createTopic():
     current_app.logger.debug("Route [topics.createTopic] creating topic")
     data = request.form.to_dict() if request.form else request.get_json()
+
+    try:
+        qos_default = parse_int_bounded(data.get('qos_default'), 'qos_default', 0, 2, default=0)
+    except ValueError as e:
+        current_app.logger.warning("Route [topics.createTopic] validation error: %s", e)
+        return jsonify({"status": "error", "error": str(e)}), 400
+
     topic = MqttTopic(
         topic=data.get('topic'),
         description=data.get('description'),
-        qos_default=int(data.get('qos_default', 0)),
+        qos_default=qos_default,
         active=data.get('active', 'on').lower() in ['on', '1', 'true'] if isinstance(data.get('active', 'on'), str) else bool(data.get('active')),
         client_id=data.get('client_id'),
         device_id=data.get('device_id'),
@@ -117,7 +125,11 @@ def editTopic(topic_id):
     
     # Handle integer conversion for qos_default
     if 'qos_default' in update_dict:
-        update_dict['qos_default'] = int(update_dict['qos_default'])
+        try:
+            update_dict['qos_default'] = parse_int_bounded(update_dict['qos_default'], 'qos_default', 0, 2, default=0)
+        except ValueError as e:
+            current_app.logger.warning("Route [topics.editTopic] validation error: %s", e)
+            return jsonify({"status": "error", "error": str(e)}), 400
     
     repos['MqttTopic'].update(topic, **update_dict)
     current_app.logger.info("Route [topics.editTopic] topic updated (id=%s)", topic_id)

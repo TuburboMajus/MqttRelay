@@ -6,7 +6,7 @@ from django.utils.encoding import iri_to_uri
 
 from front.renderers.base import BaseTemplate
 from core.repository import repos
-from core.auth import authenticate_user, hash_password, SQLAlchemyUserProxy
+from core.auth import authenticate_user, hash_password, validate_password, SQLAlchemyUserProxy
 from core.models import User, Privilege
 
 from datetime import datetime, date
@@ -32,10 +32,15 @@ def login():
 	
 	# Get language from session or query param
 	language_code = session.get('lg', g.get('language', {}).get('code', 'en'))
-	
+
+	# Bootstrap-only signup: hide the sign-up link once an account already exists
+	user_exists = repos['User'].count() > 0
+
 	return render_template(
 		f'{language_code}/auth/login.html',
 		languages=current_app.config['LANGUAGES'].values(),
+		user_exists=user_exists,
+		error=request.args.get('error'),
 	)
 
 
@@ -84,15 +89,26 @@ def signup():
 
 	language_code = session.get('lg', g.get('language', {}).get('code', 'en'))
 
+	# Bootstrap-only signup: once an account exists, show a message to contact
+	# the administrator instead of the signup form.
+	signup_disabled = repos['User'].count() > 0
+
 	return render_template(
 		f'{language_code}/auth/signup.html',
-		languages=current_app.config['LANGUAGES'].values()
+		languages=current_app.config['LANGUAGES'].values(),
+		signup_disabled=signup_disabled,
+		error=request.args.get('error'),
 	)
 
 
 @auth_blueprint.route('/signup', methods=['POST'])
 def doSignup():
 	current_app.logger.debug("Route [auth.doSignup] signup attempt for email=%s", request.form.get('email'))
+
+	# Bootstrap-only signup: refuse to create any account once one already exists
+	if repos['User'].count() > 0:
+		current_app.logger.warning("Route [auth.doSignup] signup rejected: an account already exists (email=%s)", request.form.get('email'))
+		return redirect(url_for('auth.signup', error="signup_disabled"))
 
 	try:
 		email = request.form.get('email', '').strip()
@@ -105,6 +121,11 @@ def doSignup():
 
 		if existing_user is None:
 			if password == cpassword:
+				password_error = validate_password(password)
+				if password_error:
+					current_app.logger.warning("Route [auth.doSignup] password too short (email=%s)", email)
+					return redirect(url_for('auth.signup', error=password_error))
+
 				# Create new user
 				admin_privilege = repos['Privilege'].get(label="admin")
 				new_user = User(

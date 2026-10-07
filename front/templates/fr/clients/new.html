@@ -4,6 +4,9 @@ htmlCopy code{% extends "/common/layouts/base.html" %}
 <h1 class="mb-4" style="margin-top: 50px;">Ajouter un nouveau client</h1>
 
 <form method="POST" action="{{ url_for('clients.newClient') }}">
+    {% if csrf_token is defined %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% endif %}
     <div class="mb-3">
         <label for="slug" class="form-label">Slug du client</label>
         <input 

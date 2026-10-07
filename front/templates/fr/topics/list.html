@@ -81,7 +81,7 @@ htmlCopy code{% extends "/common/layouts/base.html" %}
 {% block scripts %}
 <script>
   // ---- Aides ----
-  const csrfToken = {% if csrf_token %}"{{ csrf_token() }}"{% else %}null{% endif %};
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || null;
 
   async function apiUpdateActive(topicId, active) {
     const url = `/topic/${encodeURIComponent(topicId)}`;

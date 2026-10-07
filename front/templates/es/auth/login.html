@@ -46,9 +46,12 @@
     <div class="login-container">
         <h2 class="mb-4 text-center">Iniciar Sesión en MqttRelay</h2>
         {% if error %}
-            <div class="alert alert-danger" role="alert">{{ error }}</div>
+            <div class="alert alert-danger" role="alert">{{ dictionnary[language.code]['login'].get(error, error) }}</div>
         {% endif %}
         <form method="POST" action="{{ url_for('auth.login') }}">
+            {% if csrf_token is defined %}
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% endif %}
             <div class="mb-3">
                 <label for="email" class="form-label">Correo electrónico</label>
                 <input 
@@ -74,9 +77,11 @@
             </div>
             <button type="submit" class="btn btn-primary w-100">Iniciar Sesión</button>
         </form>
+        {% if not user_exists %}
         <p class="mt-3 text-center">
             ¿No tienes una cuenta? <a href="{{ url_for('auth.signup') }}">Regístrate</a>
         </p>
+        {% endif %}
     </div>
 </body>
 </html>

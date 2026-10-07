@@ -2,6 +2,8 @@
 from core.repository import Repository
 from typing import Any, List, Dict, Optional
 
+MAX_PER_PAGE = 500
+
 
 class Pagination:
     """Pagination helper for query results."""
@@ -20,6 +22,8 @@ class Pagination:
     @property
     def pages(self) -> int:
         """Total number of pages."""
+        if self.per_page <= 0:
+            return 0
         return (self.total + self.per_page - 1) // self.per_page
     
     @property
@@ -75,6 +79,10 @@ def paginate(repo: Repository, page: int = 1, per_page: int = 20, **filters) -> 
     """
     if page < 1:
         page = 1
+    if per_page < 1:
+        per_page = 1
+    elif per_page > MAX_PER_PAGE:
+        per_page = MAX_PER_PAGE
     
     offset = (page - 1) * per_page
     
