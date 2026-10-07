@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from core.repository import repos
 from core.pagination import paginate
 from core.models import DeviceType, Device, MqttMessage
+from core.validation import clean_json_field
 
 from datetime import datetime, date
 import logging
@@ -49,18 +50,21 @@ def createDevice():
     current_app.logger.debug("Route [devices.createDevice] creating device type")
     data = request.form.to_dict() if request.form else request.get_json()
     
-    # Handle JSON fields - set to None if empty
-    for field in ["capabilities", "payload_schema", "defaults_json"]:
-        if data.get(field, "").strip() == "":
-            data[field] = None
+    try:
+        capabilities = clean_json_field(data.get('capabilities'), 'capabilities')
+        payload_schema = clean_json_field(data.get('payload_schema'), 'payload_schema')
+        defaults_json = clean_json_field(data.get('defaults_json'), 'defaults_json')
+    except ValueError as e:
+        current_app.logger.warning("Route [devices.createDevice] validation error: %s", e)
+        return jsonify({"status": "error", "error": str(e)}), 400
     
     device = DeviceType(
         vendor=data.get('vendor'),
         model=data.get('model'),
         kind=data.get('kind'),
-        capabilities=data.get('capabilities'),
-        payload_schema=data.get('payload_schema'),
-        defaults_json=data.get('defaults_json'),
+        capabilities=capabilities,
+        payload_schema=payload_schema,
+        defaults_json=defaults_json,
         created_at=datetime.utcnow()
     )
     repos['DeviceType'].create(device)

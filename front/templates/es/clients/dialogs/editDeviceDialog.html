@@ -41,6 +41,9 @@
           <div class="tab-pane fade" id="pane-edit" role="tabpanel" aria-labelledby="tab-edit">
             <form id="editDeviceForm">
               <input type="hidden" id="edf_device_id">
+              {% if csrf_token is defined %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% endif %}
               <div class="row g-3">
                 <div class="col-md-6">
                   <label class="form-label" for="edf_device_type_id">Tipo de dispositivo</label>

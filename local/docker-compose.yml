@@ -1,0 +1,104 @@
+# ---------------------------------------------------------------------------
+# MqttRelay — local, whole-platform bring-up (all components + their local infra).
+#
+# Builds the two components from their own Dockerfiles (components/<name>/docker/) and
+# starts a local PostgreSQL + a local Mosquitto broker alongside them, so the full
+# dashboard -> relay-worker -> dispatch pipeline is reachable end to end on one machine.
+#
+# Build context for both component images is the REPO ROOT (`..` from this file) — see
+# ARCHITECTURE.md section 7: component source has not moved into components/<name>/src/
+# yet, it is still at the repository root.
+#
+# Usage: ../local/docker-compose-start.sh and ../local/docker-compose-stop.sh wrap this
+# file; run those instead of `docker compose` directly unless you need extra flags.
+#
+# Dev-only defaults, not secrets: database and broker credentials below are fixed, local,
+# throw-away values. MQTT_RELAY_ENC_KEY_PRIMARY is intentionally left unset — the app boots
+# fine without it and only needs a real key when a destination's password is actually
+# encrypted/decrypted (see core/crypto.py); set it in local/.env if you need that locally.
+# ---------------------------------------------------------------------------
+
+name: mqttrelay-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mqttrelay
+      POSTGRES_USER: mqttrelay
+      POSTGRES_PASSWORD: mqttrelay
+    volumes:
+      - ../install/storages/dbscheme_postgresql.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - mqttrelay_local_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mqttrelay -d mqttrelay"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "1883:1883"
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: components/dashboard/docker/Dockerfile
+    image: mqttrelay-dashboard:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: mqttrelay
+      DB_USER: mqttrelay
+      DB_PASSWORD: mqttrelay
+      MQTT_BROKER_URL: mosquitto
+      MQTT_BROKER_PORT: "1883"
+      # Override below (or `docker compose -f local/docker-compose.yml run -e ...`) if you
+      # need real encryption locally — the app boots fine without it (see note above).
+      MQTT_RELAY_ENC_KEY_PRIMARY: ""
+    ports:
+      - "23909:23909"
+    volumes:
+      - mqttrelay_local_parsers:/app/db
+
+  relay-worker:
+    build:
+      context: ..
+      dockerfile: components/relay-worker/docker/Dockerfile
+    image: mqttrelay-worker:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dashboard:
+        condition: service_started
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: mqttrelay
+      DB_USER: mqttrelay
+      DB_PASSWORD: mqttrelay
+      MQTT_RELAY_ENC_KEY_PRIMARY: ""
+    volumes:
+      # Shared with `dashboard`: relay-worker imports parser code the dashboard writes.
+      - mqttrelay_local_parsers:/app/db
+      - mqttrelay_local_worker_logs:/app/logs
+
+volumes:
+  mqttrelay_local_postgres_data:
+  mqttrelay_local_parsers:
+  mqttrelay_local_worker_logs:

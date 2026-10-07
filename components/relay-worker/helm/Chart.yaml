@@ -1,0 +1,10 @@
+apiVersion: v2
+name: mqttrelay-relay-worker
+description: >
+  MqttRelay relay-worker component — standalone ingest/parse/dispatch loop.
+  Intentionally minimal (see ARCHITECTURE.md section 8): a working single-replica
+  Deployment, not yet the hardened chart (probes, securityContext) the Platform Engineer
+  Agent derives from docker/ at epic close.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from core.repository import repos
 from core.pagination import paginate
 from core.models import ClientDestination
+from core.validation import parse_int_bounded, clean_json_field
 
 from datetime import datetime, date
 import json
@@ -50,18 +51,19 @@ def createDestination():
     current_app.logger.debug("Route [destinations.createDestination] creating destination")
     data = request.form.to_dict() if request.form else request.get_json()
     
-    # Handle options_json field
-    options_json = data.get('options_json', '')
-    if options_json and isinstance(options_json, dict):
-        options_json = json.dumps(options_json)
-    elif not options_json or (isinstance(options_json, str) and options_json.strip() == ''):
-        options_json = None
+    try:
+        # Handle options_json field
+        options_json = clean_json_field(data.get('options_json'), 'options_json')
+        port = parse_int_bounded(data.get('port'), 'port', 1, 65535, default=None) if data.get('port') else None
+    except ValueError as e:
+        current_app.logger.warning("Route [destinations.createDestination] validation error: %s", e)
+        return jsonify({"status": "error", "error": str(e)}), 400
     
     destination = ClientDestination(
         client_id=data.get('client_id'),
         type=data.get('type'),
         host=data.get('host'),
-        port=int(data.get('port', 0)) if data.get('port') else None,
+        port=port,
         database_name=data.get('database_name'),
         username=data.get('username'),
         password_enc=data.get('password_enc'),

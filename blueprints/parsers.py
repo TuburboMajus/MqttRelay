@@ -4,7 +4,9 @@ from flask_login import login_required, current_user
 from core.repository import repos
 from core.pagination import paginate
 from core.models import Parser, Metric
+from core.validation import clean_json_field
 from context import PARSERS_DB
+from core.auth import roles_required
 
 from datetime import datetime, date
 import logging
@@ -55,17 +57,18 @@ def createParser():
     current_app.logger.debug("Route [parsers.createParser] creating parser")
     data = request.form.to_dict() if request.form else request.get_json()
     
-    # Handle JSON fields - set to None if empty
-    for field in ["config_schema"]:
-        if data.get(field, "").strip() == "":
-            data[field] = None
+    try:
+        config_schema = clean_json_field(data.get('config_schema'), 'config_schema')
+    except ValueError as e:
+        current_app.logger.warning("Route [parsers.createParser] validation error: %s", e)
+        return jsonify({"status": "error", "error": str(e)}), 400
     
     parser = Parser(
         name=data.get('name'),
         version=data.get('version'),
         description=data.get('description'),
         language=data.get('language', 'python'),
-        config_schema=data.get('config_schema'),
+        config_schema=config_schema,
         active=data.get('active', 'on').lower() in ['on', '1', 'true'] if isinstance(data.get('active', 'on'), str) else bool(data.get('active')),
         created_at=datetime.utcnow()
     )
@@ -114,6 +117,13 @@ def editParser(parser_id):
     if 'active' in update_dict:
         update_dict['active'] = update_dict['active'].lower() in ['true', '1', 'on'] if isinstance(update_dict['active'], str) else bool(update_dict['active'])
     
+    try:
+        if 'config_schema' in update_dict:
+            update_dict['config_schema'] = clean_json_field(update_dict['config_schema'], 'config_schema')
+    except ValueError as e:
+        current_app.logger.warning("Route [parsers.editParser] validation error: %s", e)
+        return jsonify({"status": "error", "error": str(e)}), 400
+    
     # Handle parser code file storage
     if data.get('code') is not None:
         code_filename = "_".join([parser.name.lower().replace(" ", "_"), parser.version.lower().replace('.', '_')])
@@ -133,6 +143,7 @@ def editParser(parser_id):
 
 @bp.route('/parser/<int:parser_id>', methods=["DELETE"])
 @login_required
+@roles_required('admin')
 def deleteParser(parser_id):
     current_app.logger.debug("Route [parsers.deleteParser] called (parser_id=%s)", parser_id)
     parser = repos['Parser'].get(id=parser_id)

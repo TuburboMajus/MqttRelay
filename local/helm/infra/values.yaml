@@ -1,0 +1,9 @@
+postgres:
+  image: postgres:16-alpine
+  database: mqttrelay
+  user: mqttrelay
+  password: mqttrelay
+  storage: 1Gi
+
+mosquitto:
+  image: eclipse-mosquitto:2

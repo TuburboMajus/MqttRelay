@@ -1,0 +1,10 @@
+apiVersion: v2
+name: mqttrelay-local-infra
+description: >
+  Local-only infra for MqttRelay: PostgreSQL (schema auto-applied on first start) and a
+  Mosquitto broker (anonymous access). Not a platform component — stood up so
+  local/helm-start.sh can bring up the whole platform, mirroring local/docker-compose.yml.
+  Never reuse this chart outside local dev.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

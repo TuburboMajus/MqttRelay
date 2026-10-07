@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  labels:
+    app.kubernetes.io/name: mqttrelay-dashboard
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mqttrelay-dashboard
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mqttrelay-dashboard
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: dashboard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.env.appPort | int }}
+          env:
+            - name: APP_PROD
+              value: {{ .Values.env.appProd | quote }}
+            - name: APP_HOST
+              value: {{ .Values.env.appHost | quote }}
+            - name: APP_PORT
+              value: {{ .Values.env.appPort | quote }}
+            - name: APP_THREADED
+              value: {{ .Values.env.appThreaded | quote }}
+            - name: APP_DEBUG
+              value: {{ .Values.env.appDebug | quote }}
+            - name: APP_LOG_LEVEL
+              value: {{ .Values.env.appLogLevel | quote }}
+            - name: DEFAULT_LANGUAGE
+              value: {{ .Values.env.defaultLanguage | quote }}
+            - name: MQTT_BROKER_URL
+              value: {{ .Values.env.mqttBrokerUrl | quote }}
+            - name: MQTT_BROKER_PORT
+              value: {{ .Values.env.mqttBrokerPort | quote }}
+            - name: DB_HOST
+              value: {{ .Values.env.dbHost | quote }}
+            - name: DB_PORT
+              value: {{ .Values.env.dbPort | quote }}
+            - name: DB_NAME
+              value: {{ .Values.env.dbName | quote }}
+            - name: DB_USER
+              value: {{ .Values.env.dbUser | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-dashboard-secrets
+                  key: DB_PASSWORD
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-dashboard-secrets
+                  key: MQTT_PASSWORD
+            - name: MQTT_RELAY_ENC_KEY_PRIMARY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-dashboard-secrets
+                  key: MQTT_RELAY_ENC_KEY_PRIMARY
+            - name: APP_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-dashboard-secrets
+                  key: APP_SECRET_KEY
+          {{- if .Values.parsersClaimName }}
+          volumeMounts:
+            - name: parsers
+              mountPath: /app/db
+          {{- end }}
+      {{- if .Values.parsersClaimName }}
+      volumes:
+        - name: parsers
+          persistentVolumeClaim:
+            claimName: {{ .Values.parsersClaimName }}
+      {{- end }}

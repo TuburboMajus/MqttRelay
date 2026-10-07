@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from core.repository import repos
 from core.models import CryptoConfig, CryptoKey, ClientDestination, Metric
 from core.crypto import crypto_config_encrypt, get_key_bytes
+from core.auth import roles_required
 
 from tools.crypto_envelopes import (
     encrypt_aes_gcm, decrypt_aes_gcm,
@@ -55,6 +56,7 @@ def settings():
 
 @bp.route('/crypto', methods=['GET'])
 @login_required
+@roles_required('admin')
 def getCrypto():
     current_app.logger.debug("Route [general.getCrypto] fetching crypto config")
     cc = repos['CryptoConfig'].list()
@@ -65,6 +67,7 @@ def getCrypto():
 
 @bp.route('/crypto/update', methods=['PUT'])
 @login_required
+@roles_required('admin')
 def updateCrypto():
     current_app.logger.debug("Route [general.updateCrypto] updating crypto config")
     
@@ -100,6 +103,7 @@ def updateCrypto():
 
 @bp.route('/crypto/test', methods=['POST'])
 @login_required
+@roles_required('admin')
 def testCrypto():
     current_app.logger.debug("Route [general.testCrypto] testing crypto config")
     
@@ -135,6 +139,7 @@ def testCrypto():
 
 @bp.route('/crypto/rotate_key', methods=['POST'])
 @login_required
+@roles_required('admin')
 def rotateCryptoKey():
     """
     Rotate the active key. Behavior by key_source:
@@ -187,6 +192,7 @@ def rotateCryptoKey():
 
 @bp.route('/crypto', methods=['POST'])
 @login_required
+@roles_required('admin')
 def reCrypto():
     """
     Re-encrypt all stored passwords in ClientDestination that are not using

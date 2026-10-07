@@ -1,0 +1,15 @@
+project_id: 373cea89-dd4d-4c2b-86cf-81e34d4fc284
+gateway_url: https://assistant.azs.tn/api/v1/plane
+external_source: fourbuddy
+labels:
+  blocked: 14b449db-4eb0-4487-8c91-93dd07ed8036
+  validated: 47fd5c89-34f0-4b4c-9386-8c1bd119d723
+states:
+  backlog: d3b28d52-8f2d-41eb-8a80-8f115be1f94f
+  unstarted: 30a79973-d859-4ca7-aca2-b59d2e3b640d
+  started: ad3bc298-7226-4580-8d89-42310aead1b6
+  completed: 17248552-c5b5-4d4e-aec2-ed77f98614d8
+  cancelled: 29996fe5-5a28-4e02-bd40-01c935dbc5ee
+members:
+- id: b710f256-a15d-4570-a58d-386db76457d1
+  name: abdellatifzied.saada

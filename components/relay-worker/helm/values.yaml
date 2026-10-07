@@ -1,0 +1,25 @@
+# replicas must stay 1: the job-table lock tolerates brief overlap during rollout, not
+# sustained multi-replica operation (see components/relay-worker/docs/README.md).
+replicaCount: 1
+
+image:
+  repository: mqttrelay-worker
+  tag: local
+  pullPolicy: IfNotPresent
+
+env:
+  dbHost: "postgres"
+  dbPort: "5432"
+  dbName: "mqttrelay"
+  dbUser: "mqttrelay"
+
+# Real secrets — never commit real values here. Pass with
+# `helm install -f local/.secrets/creds.values.yaml` or `--set secrets.xxx=...`.
+secrets:
+  dbPassword: ""
+  encKeyPrimary: ""
+
+# Name of a pre-existing ReadWriteMany PVC shared with dashboard for db/parsers/.
+# Left empty by default (minimal chart): the container boots without parser persistence
+# until a real volume is wired up by whoever installs this chart.
+parsersClaimName: ""
