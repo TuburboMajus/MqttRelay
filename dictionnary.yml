@@ -9,6 +9,8 @@ en:
     email_already_used: This email address is already in use.
     account_name_already_user: This account name is already in use
     email_error: Incorrect email
+    password_too_short: Password must be at least 8 characters long
+    signup_disabled: Self-signup is disabled. An account already exists on this instance. Contact your administrator.
 fr:
   login:
     account_deactivated: Votre compte a été désactivé. Contactez votre administrateur ou l'équipe de support.
@@ -20,6 +22,8 @@ fr:
     email_already_used: Cette adresse email est déjà utilisée.
     account_name_already_user: Ce nom de compte est déjà utilisé
     email_error: Adresse email incorrecte
+    password_too_short: Le mot de passe doit contenir au moins 8 caractères
+    signup_disabled: L'auto-inscription est désactivée. Un compte existe déjà sur cette instance. Contactez votre administrateur.
 ar:
   login:
     account_deactivated: تم تعطيل حسابك. اتصل بمسؤولك أو بفريق الدعم.
@@ -31,3 +35,16 @@ ar:
     email_already_used: عنوان البريد الإلكتروني هذا مستخدم بالفعل.
     account_name_already_user: اسم الحساب هذا مستخدم بالفعل
     email_error: بريد إلكتروني غير صحيح
+es:
+  login:
+    account_deactivated: Su cuenta ha sido desactivada. Póngase en contacto con su administrador o con el equipo de soporte.
+    wrong_identifiers: No se encontró ninguna cuenta con estos identificadores
+  signup:
+    account_name_error: Formato incorrecto para el nombre de la cuenta
+    unauthorized_account_name: Este nombre de cuenta {} no está autorizado
+    unmatched_passwords: Las contraseñas no coinciden
+    email_already_used: Esta dirección de correo electrónico ya está en uso.
+    account_name_already_user: Este nombre de cuenta ya está en uso
+    email_error: Correo electrónico incorrecto
+    password_too_short: La contraseña debe tener al menos 8 caracteres
+    signup_disabled: El autorregistro está desactivado. Ya existe una cuenta en esta instancia. Póngase en contacto con su administrador.

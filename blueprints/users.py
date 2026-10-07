@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 
 from core.repository import repos
 from core.pagination import paginate
-from core.auth import hash_password, verify_password
+from core.auth import hash_password, verify_password, validate_password, MIN_PASSWORD_LENGTH, roles_required
 from core.models import User, Privilege
 
 from datetime import datetime, date
@@ -19,6 +19,7 @@ def setup(config=None):
 
 @bp.route('/users')
 @login_required
+@roles_required('admin')
 def listUsers():
     current_app.logger.debug("Route [users.listUsers] called (json=%s, page=%s)", request.args.get('json'), request.args.get('page'))
     page = request.args.get('page', 1, type=int)
@@ -37,6 +38,7 @@ def listUsers():
 
 @bp.route('/user')
 @login_required
+@roles_required('admin')
 def newUser():
     current_app.logger.debug("Route [users.newUser] serving new user form")
     privileges = repos['Privilege'].list()
@@ -48,9 +50,16 @@ def newUser():
 
 @bp.route('/user', methods=["POST"])
 @login_required
+@roles_required('admin')
 def createUser():
     current_app.logger.debug("Route [users.createUser] creating user")
     data = request.form.to_dict() if request.form else request.get_json()
+
+    # Validate password length before hashing
+    password_error = validate_password(data.get('password', ''))
+    if password_error:
+        current_app.logger.warning("Route [users.createUser] password too short (email=%s)", data.get('email'))
+        return jsonify(status="error", error=password_error), 400
 
     # Hash the password
     password_hash = hash_password(data.get('password', ''))
@@ -80,6 +89,7 @@ def createUser():
 
 @bp.route('/user/<string:user_id>')
 @login_required
+@roles_required('admin')
 def viewUser(user_id):
     current_app.logger.debug("Route [users.viewUser] called (user_id=%s)", user_id)
     user = repos['User'].get(id=user_id)
@@ -95,6 +105,7 @@ def viewUser(user_id):
 
 @bp.route('/user/<string:user_id>', methods=["PUT", "PATCH"])
 @login_required
+@roles_required('admin')
 def editUser(user_id):
     current_app.logger.debug("Route [users.editUser] called (user_id=%s)", user_id)
     user = repos['User'].get(id=user_id)
@@ -143,7 +154,7 @@ def changePassword(user_id):
         return jsonify(status="error", data="New passwords do not match")
 
     # Check password length
-    if len(data.get('npassword', '')) < 8:
+    if len(data.get('npassword', '')) < MIN_PASSWORD_LENGTH:
         current_app.logger.warning("Route [users.changePassword] new password too short for user (id=%s)", user_id)
         return jsonify(status="error", data="Password must be at least 8 characters")
 
@@ -157,6 +168,7 @@ def changePassword(user_id):
 
 @bp.route('/user/<string:user_id>', methods=["DELETE"])
 @login_required
+@roles_required('admin')
 def deleteUser(user_id):
     current_app.logger.debug("Route [users.deleteUser] called (user_id=%s)", user_id)
     user = repos['User'].get(id=user_id)

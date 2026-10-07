@@ -1,6 +1,9 @@
 from flask import Flask, redirect, url_for, g, session, request
 from flask_mqtt import Mqtt
 from flask_login import current_user, login_required, LoginManager
+from flask_wtf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from context import *
 from core.models import User, Language
@@ -67,6 +70,11 @@ def build_app(**app_configuration):
 		template_folder=config['app']['templates_folder'],
 		static_folder=config['app']['static_folder']
 	)
+	csrf = CSRFProtect(app)
+	# In-memory storage is fine for this single-container deployment; move to a shared
+	# Redis backend (storage_uri='redis://...') if the web service is ever scaled
+	# horizontally, since in-memory limits are per-process and wouldn't be shared.
+	limiter = Limiter(get_remote_address, app=app, storage_uri='memory://')
 
 	secret_key = config['app'].get('secret_key','')
 	app.secret_key = secret_key if len(secret_key) > 0 else generate_secret_key(32)
@@ -77,6 +85,11 @@ def build_app(**app_configuration):
 	# ** EndSection ** LoggingLevel
 
 	app.config.update({k:v for k,v in config['app'].items() if not type(v) is dict})
+	app.config.update({
+		'SESSION_COOKIE_HTTPONLY': True,
+		'SESSION_COOKIE_SAMESITE': 'Lax',
+		'SESSION_COOKIE_SECURE': config['app'].get('ssl', False),
+	})
 	app.config.update({f"MQTT_{k.upper()}":v for k,v in config['mqtt'].items() if not type(v) is dict})
 	# flask-mqtt defaults tls_version to the deprecated ssl.PROTOCOL_TLSv1, which modern
 	# brokers reject (TLS handshake never completes -> on_connect/subscribe never fire).
@@ -140,6 +153,15 @@ def build_app(**app_configuration):
 	app.register_blueprint(mqtt_bp)
 	app.register_blueprint(blueprints.auth.setup(auth_blueprint_config))
 	# ** EndSection ** Blueprint**
+
+	# ** Section ** RateLimits
+	# Apply limits directly to the already-registered view functions (keyed by their
+	# blueprint-qualified endpoint name) rather than importing the blueprints' view
+	# modules here, to avoid a circular import between run.py and blueprints/*.py.
+	app.view_functions['auth.dologin'] = limiter.limit("10 per minute;100 per hour")(app.view_functions['auth.dologin'])
+	app.view_functions['auth.doSignup'] = limiter.limit("5 per minute")(app.view_functions['auth.doSignup'])
+	app.view_functions['users.changePassword'] = limiter.limit("10 per minute")(app.view_functions['users.changePassword'])
+	# ** EndSection ** RateLimits
 
 	# ** Section ** AppMainRoutes
 	@app.route('/', methods=['GET'])

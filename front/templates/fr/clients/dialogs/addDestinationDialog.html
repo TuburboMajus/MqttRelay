@@ -8,6 +8,9 @@ htmlCopy code<!-- Add Destination Modal -->
       </div>
       <div class="modal-body">
         <input type="hidden" name="client_id" value="{{ client['id'] }}">
+        {% if csrf_token is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
 
         <div class="mb-3">
           <label for="dest_type" class="form-label">Type</label>

@@ -5,6 +5,8 @@ from core.repository import repos
 from core.pagination import paginate
 from core.models import Client, MqttMessage, ClientDestination, Device, CryptoConfig, CryptoKey
 from core.crypto import crypto_config_encrypt, get_key_bytes
+from core.validation import parse_int_bounded, clean_json_field
+from core.auth import roles_required
 
 from datetime import datetime, date
 from pathlib import Path
@@ -210,6 +212,7 @@ def editClient(client_id):
 
 @clients_blueprint.route('/client/<int:client_id>', methods=["DELETE"])
 @login_required
+@roles_required('admin')
 def deleteClient(client_id):
     current_app.logger.debug("Route [clients.deleteClient] called (client_id=%s)", client_id)
     client = repos['Client'].get(id=client_id)
@@ -252,6 +255,13 @@ def addDevice(client_id):
         data = request.form.to_dict() if request.form else request.get_json()
         data.pop('client_id', None)
         
+        try:
+            emission_rate = parse_int_bounded(data['emission_rate'], 'emission_rate', 0, 2**31 - 1) if data.get('emission_rate') else None
+            metadata_json = clean_json_field(data.get('metadata_json'), 'metadata_json')
+        except ValueError as e:
+            current_app.logger.warning("Route [clients.addDevice] validation error: %s", e)
+            return jsonify({"status": "error", "error": str(e)}), 400
+        
         device = Device(
             client_id=client_id,
             name=data.get('name'),
@@ -260,10 +270,10 @@ def addDevice(client_id):
             external_ref=data.get('external_ref'),
             description=data.get('description'),
             location=data.get('location'),
-            metadata_json=data.get('metadata_json'),
+            metadata_json=metadata_json,
             active=data.get('active', 'true').lower() in ['true', '1', 'on'] if isinstance(data.get('active', 'true'), str) else bool(data.get('active')),
             status=data.get('status', 'unknown'),
-            emission_rate=int(data['emission_rate']) if data.get('emission_rate') else None,
+            emission_rate=emission_rate,
             created_at=datetime.utcnow()
         )
         repos['Device'].create(device)
@@ -287,9 +297,20 @@ def editDevice(client_id, device_id):
     try:
         data = request.form.to_dict() if request.form else request.get_json()
         updates = {}
-        for field in ['name', 'device_type_id', 'topic', 'external_ref', 'description', 'location', 'metadata_json', 'status', 'emission_rate']:
-            if field in data:
-                updates[field] = int(data[field]) if field in ('device_type_id', 'emission_rate') and data[field] is not None else data[field]
+        try:
+            for field in ['name', 'device_type_id', 'topic', 'external_ref', 'description', 'location', 'metadata_json', 'status', 'emission_rate']:
+                if field in data:
+                    if field == 'emission_rate':
+                        updates[field] = parse_int_bounded(data[field], 'emission_rate', 0, 2**31 - 1) if data[field] is not None else None
+                    elif field == 'metadata_json':
+                        updates[field] = clean_json_field(data[field], 'metadata_json')
+                    elif field == 'device_type_id':
+                        updates[field] = int(data[field]) if data[field] is not None else None
+                    else:
+                        updates[field] = data[field]
+        except ValueError as e:
+            current_app.logger.warning("Route [clients.editDevice] validation error: %s", e)
+            return jsonify({"status": "error", "error": str(e)}), 400
         if 'active' in data:
             updates['active'] = data['active'].lower() in ['true', '1', 'on'] if isinstance(data['active'], str) else bool(data['active'])
         
@@ -303,6 +324,7 @@ def editDevice(client_id, device_id):
 
 @clients_blueprint.route('/client/<int:client_id>/device/<int:device_id>', methods=["DELETE"])
 @login_required
+@roles_required('admin')
 def deleteDevice(client_id, device_id):
     current_app.logger.debug("Route [clients.deleteDevice] called (client_id=%s, device_id=%s)", client_id, device_id)
     device = repos['Device'].get(id=device_id)
@@ -344,13 +366,13 @@ def addDestination(client_id):
         data = request.form.to_dict() if request.form else request.get_json()
         data.pop('client_id', None)
         
-        # Handle options_json
-        options_json = data.get('options_json')
-        if options_json:
-            if not isinstance(options_json, str):
-                options_json = json.dumps(options_json)
-            if options_json.strip() == '':
-                options_json = None
+        # Handle options_json / port
+        try:
+            options_json = clean_json_field(data.get('options_json'), 'options_json')
+            port = parse_int_bounded(data.get('port'), 'port', 1, 65535) if data.get('port') else None
+        except ValueError as e:
+            current_app.logger.warning("Route [clients.addDestination] validation error: %s", e)
+            return jsonify({"status": "error", "error": str(e)}), 400
         
         # Get crypto config for password encryption
         cc = repos['CryptoConfig'].list()
@@ -369,7 +391,7 @@ def addDestination(client_id):
             client_id=client_id,
             type=data.get('type'),
             host=data.get('host'),
-            port=int(data.get('port')) if data.get('port') else None,
+            port=port,
             database_name=data.get('database_name'),
             username=data.get('username'),
             password_enc=password_encrypted,
@@ -408,14 +430,20 @@ def editDestination(client_id, destination_id):
         cc = cc[0]
         
         updates = {}
-        for field in ['type', 'host', 'port', 'database_name', 'username', 'uri', 'options_json', 'active']:
-            if field in data:
-                if field == 'port':
-                    updates[field] = int(data[field]) if data[field] else None
-                elif field == 'active':
-                    updates[field] = data[field].lower() in ['true', '1', 'on'] if isinstance(data[field], str) else bool(data[field])
-                else:
-                    updates[field] = data[field]
+        try:
+            for field in ['type', 'host', 'port', 'database_name', 'username', 'uri', 'options_json', 'active']:
+                if field in data:
+                    if field == 'port':
+                        updates[field] = parse_int_bounded(data[field], 'port', 1, 65535) if data[field] else None
+                    elif field == 'options_json':
+                        updates[field] = clean_json_field(data[field], 'options_json')
+                    elif field == 'active':
+                        updates[field] = data[field].lower() in ['true', '1', 'on'] if isinstance(data[field], str) else bool(data[field])
+                    else:
+                        updates[field] = data[field]
+        except ValueError as e:
+            current_app.logger.warning("Route [clients.editDestination] validation error: %s", e)
+            return jsonify({"status": "error", "error": str(e)}), 400
         
         # Handle password encryption if provided
         if data.get('password') and str(data['password']).strip():
@@ -432,6 +460,7 @@ def editDestination(client_id, destination_id):
 
 @clients_blueprint.route('/client/<int:client_id>/destination/<int:destination_id>', methods=["DELETE"])
 @login_required
+@roles_required('admin')
 def deleteDestination(client_id, destination_id):
     current_app.logger.debug("Route [clients.deleteDestination] called (client_id=%s, destination_id=%s)", client_id, destination_id)
     destination = repos['ClientDestination'].get(id=destination_id)
